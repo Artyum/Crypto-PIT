@@ -1,0 +1,22 @@
+{
+  "include": [
+    "crypto_pit",
+    "crypto-pit.py"
+  ],
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.git",
+    "**/.pytest_cache",
+    "**/.mypy_cache",
+    "**/.*",
+    "**/.venv"
+  ],
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "standard",
+  "reportMissingTypeStubs": false,
+  "reportOverlappingOverload": "none",
+  "reportIncompatibleVariableOverride": "none"
+}

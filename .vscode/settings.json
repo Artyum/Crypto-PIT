@@ -1,0 +1,51 @@
+{
+  // Ustawienia edytora
+  "editor.insertSpaces": true,
+  "editor.tabSize": 4,
+  "editor.rulers": [100],
+  "editor.formatOnSave": false,
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+  "files.eol": "\n",
+
+  // Interpreter — lokalne .venv projektu
+  "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+  "python.terminal.activateEnvInCurrentTerminal": true,
+  "python.terminal.activateEnvironment": true,
+  "python.terminal.useEnvFile": true,
+  "python-envs.defaultEnvManager": "ms-python.python:venv",
+  "python-envs.defaultPackageManager": "ms-python.python:pip",
+
+  "terminal.integrated.scrollback": 10000,
+  "terminal.integrated.defaultProfile.windows": "PowerShell",
+
+  // Konfiguracja Pylance
+  "python.analysis.typeCheckingMode": "standard",
+  "python.analysis.diagnosticMode": "workspace",
+
+  // Konfiguracja dla plików Python
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.fixAll.ruff": "explicit",
+      "source.organizeImports.ruff": "explicit"
+    }
+  },
+
+  "[markdown]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  },
+
+  // Ukrywanie niepotrzebnych katalogów
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.pytest_cache": true,
+    "**/.mypy_cache": true
+  },
+
+  "files.associations": {
+    ".env*": "properties"
+  }
+}

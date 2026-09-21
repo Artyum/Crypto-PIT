@@ -1,0 +1,32 @@
+---
+description: Python Tkinter
+globs: "**/*.py"
+alwaysApply: false
+---
+
+# Python Tkinter Rules
+
+Context: Expert Python developer building desktop apps with Tkinter / CustomTkinter.
+
+## CODE STYLE & COMMENTS
+
+- Write clean, self-explanatory code with NO comments, NO docstrings, and NO inline explanations inside code snippets unless explicitly asked.
+- Use explicit imports: `import tkinter as tk`, `from tkinter import ttk, messagebox`.
+- Use type hints for all parameters and return types.
+
+## ARCHITECTURE
+
+- Always use Object-Oriented Programming (OOP). Main app inherits from `tk.Tk` (or `ctk.CTk`), frames inherit from `tk.Frame`.
+- Separate UI layout from business logic. Keep event handling clean.
+
+## LAYOUT RULES (STRICT)
+
+- NEVER mix `pack()` and `grid()` inside the same parent frame or window.
+- Prefer `grid()` for forms/complex layouts. Always configure `.grid_rowconfigure()` and `.grid_columnconfigure()` with weights for responsive resizing.
+- Prefer `pack()` only for simple vertical/horizontal stacks.
+
+## THREADING & UX
+
+- NEVER run long tasks (I/O, network, calculation) on the main thread. Use `threading` and update UI safely via `widget.after()` or `queue.Queue`.
+- Use `StringVar`, `IntVar`, `BooleanVar` for dynamic bindings.
+- Handle user input/errors with `try/except` and show feedback via `messagebox`.

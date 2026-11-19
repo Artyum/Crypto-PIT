@@ -4,6 +4,8 @@ Set-Location $Root
 
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $OutputEncoding = [Text.Encoding]::UTF8
+$env:PYTHONIOENCODING = "utf-8"
+$env:PYTHONUTF8 = "1"
 
 $ReportDir = Join-Path $Root "report"
 $Log = Join-Path $ReportDir "audit.log"

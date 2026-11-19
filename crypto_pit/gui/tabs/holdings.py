@@ -86,7 +86,13 @@ class HoldingsTab:
                 "value_pln": "Wartość PLN",
                 "status": "Status",
             },
-            anchors={"amount": tk.E, "usd": tk.E, "pln": tk.E, "value_pln": tk.E},
+            anchors={
+                "amount": tk.E,
+                "usd": tk.E,
+                "pln": tk.E,
+                "value_pln": tk.E,
+                "status": tk.E,
+            },
         )
         self.tree.bind("<Double-1>", lambda _e: self.edit())
 

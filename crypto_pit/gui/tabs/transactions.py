@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from crypto_pit.domain.enums import TxType
 from crypto_pit.domain.models import Transaction
 from crypto_pit.gui.dialogs import open_transaction_dialog
-from crypto_pit.gui.formatters import fmt_datetime, fmt_money
+from crypto_pit.gui.formatters import fmt_datetime, fmt_money, fmt_qty
 from crypto_pit.gui.widgets import (
     FilterDropdown,
     autosize_columns,
@@ -42,11 +42,6 @@ _TX_COLUMNS = (
 )
 
 
-def _fmt_qty(v: float, digits: int = 8) -> str:
-    s = f"{v:.{digits}f}".rstrip("0").rstrip(".")
-    return s if s else "0"
-
-
 def _tx_values(lp: int, tx: Transaction) -> tuple[object, ...]:
     return (
         lp,
@@ -54,15 +49,15 @@ def _tx_values(lp: int, tx: Transaction) -> tuple[object, ...]:
         fmt_datetime(tx.date),
         tx.type.label_pl,
         (tx.asset or "").upper(),
-        _fmt_qty(tx.coin_amount),
+        fmt_qty(tx.coin_amount),
         tx.currency or "PLN",
         fmt_money(tx.value),
-        _fmt_qty(tx.price, 6),
-        _fmt_qty(tx.curr_to_pln, 6) if tx.curr_to_pln else "1",
+        fmt_qty(tx.price, 6),
+        fmt_qty(tx.curr_to_pln, 6) if tx.curr_to_pln else "1",
         fmt_money(tx.value_pln),
         fmt_money(tx.fee_pln),
-        _fmt_qty(tx.fee_coin),
-        _fmt_qty(tx.final_coin),
+        fmt_qty(tx.fee_coin),
+        fmt_qty(tx.final_coin),
     )
 
 

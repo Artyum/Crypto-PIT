@@ -8,6 +8,7 @@ from tkinter import filedialog, ttk
 
 from crypto_pit import __version__
 from crypto_pit.config import DEFAULT_DB_PATH
+from crypto_pit.gui.tabs.dca import DcaTab
 from crypto_pit.gui.tabs.holdings import HoldingsTab
 from crypto_pit.gui.tabs.pit import PitTab
 from crypto_pit.gui.tabs.transactions import TransactionsTab
@@ -49,16 +50,19 @@ class CryptoPitApp(tk.Tk):
         self.notebook.grid(row=0, column=0, sticky="nsew", padx=PAD, pady=GAP)
 
         tab_tx = ttk.Frame(self.notebook, padding=PAD)
+        tab_dca = ttk.Frame(self.notebook, padding=PAD)
         tab_holdings = ttk.Frame(self.notebook, padding=PAD)
         tab_years = ttk.Frame(self.notebook, padding=PAD)
         tab_pit = ttk.Frame(self.notebook, padding=PAD)
 
         self.notebook.add(tab_tx, text="Transakcje")
+        self.notebook.add(tab_dca, text="DCA")
         self.notebook.add(tab_holdings, text="Portfel")
         self.notebook.add(tab_years, text="Rozliczenie lat")
         self.notebook.add(tab_pit, text="Pola PIT-38")
 
         self.tab_tx = TransactionsTab(tab_tx, self)
+        self.tab_dca = DcaTab(tab_dca, self)
         self.tab_holdings = HoldingsTab(tab_holdings, self)
         self.tab_years = YearsTab(tab_years, self)
         self.tab_pit = PitTab(tab_pit, self)
@@ -91,6 +95,10 @@ class CryptoPitApp(tk.Tk):
         menu_view.add_command(
             label="Transakcje",
             command=lambda: self.notebook.select(self.tab_tx.frame),
+        )
+        menu_view.add_command(
+            label="DCA",
+            command=lambda: self.notebook.select(self.tab_dca.frame),
         )
         menu_view.add_command(
             label="Portfel",
@@ -127,6 +135,7 @@ class CryptoPitApp(tk.Tk):
 
     def refresh_all(self) -> None:
         self.tab_tx.refresh()
+        self.tab_dca.refresh()
         self.tab_holdings.refresh(fetch_rates=False)
         self.tab_years.refresh()
         self.tab_pit.refresh()

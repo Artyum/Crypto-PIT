@@ -106,14 +106,16 @@ def setup_columns(
 ) -> None:
     tree["columns"] = columns
     for c in columns:
-        tree.heading(c, text=headings[c], anchor=tk.W)
         stretch = stretch_last and c == columns[-1]
+        col_anchor = cast(_Anchor, (anchors or {}).get(c, "w"))
+        heading_anchor: _Anchor = col_anchor if stretch else tk.W
+        tree.heading(c, text=headings[c], anchor=heading_anchor)
         tree.column(
             c,
             width=_COL_MIN,
             minwidth=_COL_MIN,
             stretch=stretch,
-            anchor=cast(_Anchor, (anchors or {}).get(c, "w")),
+            anchor=col_anchor,
         )
 
 

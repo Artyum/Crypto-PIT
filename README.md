@@ -11,12 +11,24 @@ To narzędzie pomocnicze, **nie poradnictwo podatkowe**. Numeracja pól PIT-38, 
 ## Co robi program
 
 - **Transakcje** — ręczne dodawanie kupna i sprzedaży z profilami giełd (Binance, Coinbase, Kanga, Kraken, OKX, Zonda). Dla wybranej giełdy program dolicza ilość, cenę, prowizję w walorze i wartości w PLN.
-- **Kurs NBP** — dla waluty innej niż PLN pobiera kurs średni z tabeli A z dnia poprzedzającego transakcję (z cofnięciem o dni wolne).
+- **Kurs NBP** — dla waluty innej niż PLN pobiera kurs średni z tabeli A z dnia poprzedzającego transakcję. Gdy API zwróci 404, cofa datę o jeden dzień, najwyżej 10 razy.
 - **Portfel** — stany walorów według lokalizacji, z opcjonalną wyceną USD/PLN z CoinGecko.
 - **Rozliczenie lat** — przychód ze sprzedaży, koszty roku, koszty przeniesione z lat ubiegłych, dochód albo koszty do przeniesienia, orientacyjny podatek 19%.
 - **Pola PIT-38** — mapowanie na część E (numery pól zależą od roku: do 2024 to 34–38, od 2025 to 36–40).
 - **Eksport CSV** — raport transakcji i rozliczeń (separator `;`, przecinek dziesiętny).
 - **Backup ZIP** — eksport i import transakcji oraz portfela (import **zastępuje** całą bazę).
+
+## Dokumentacja
+
+Instrukcja po polsku, w katalogu [`Docs/`](Docs/README.md):
+
+- [Instalacja i uruchomienie](Docs/instalacja.md)
+- [Transakcje](Docs/transakcje.md)
+- [DCA](Docs/dca.md)
+- [Portfel](Docs/portfel.md)
+- [Rozliczenie lat](Docs/rozliczenie-lat.md)
+- [Pola PIT-38](Docs/pit-38.md)
+- [Eksport i backup](Docs/eksport-i-backup.md)
 
 ## Wymagania
 
@@ -73,7 +85,7 @@ Kwoty w zeznaniu są zaokrąglane do pełnych złotych (od 50 gr w górę).
 
 Dla każdej transakcji:
 
-- **Kupno** — kosztem podatkowym jest wartość w PLN obciążenia konta (`value_pln`, zwykle z prowizją w cenie nabycia).
+- **Kupno** — kosztem podatkowym jest wartość bezwzględna pola `value_pln` (w oknie kupna podpowiedź mówi o pełnej kwocie obciążenia konta, z prowizją w walucie).
 - **Sprzedaż** — przychodem jest wartość sprzedaży w PLN; kosztem roku jest prowizja sprzedaży w PLN.
 - **Inne** — nie wchodzi do przychodu ani kosztów PIT.
 
@@ -86,7 +98,7 @@ Rozliczenie idzie chronologicznie po latach kalendarzowych:
 5. W przeciwnym razie: dochód = przychód − koszty, nic nie przechodzi dalej.
 6. Podatek 19% jest **orientacyjny** (poza częścią E formularza).
 
-To uproszczenie FIFO/identyfikacji konkretnych partii — program sumuje wartości, nie paruje każdej sprzedaży z konkretnym zakupem.
+Program sumuje wartości w roku i nie paruje każdej sprzedaży z konkretnym zakupem.
 
 ### Profile giełd (autokalkulacja)
 
@@ -109,6 +121,7 @@ Użytkownik podaje m.in. giełdę, typ, datę, walor, walutę i wartość. Reszt
 ## Struktura repozytorium
 
 ```
+Docs/                  # instrukcja obsługi (Markdown, widoczna na GitHubie)
 crypto-pit.py          # cienki launcher
 crypto_pit/
   __main__.py          # CLI / GUI
@@ -157,6 +170,8 @@ Repozytorium jest gotowe do publicznego zdalnego originu. Nie wypychaj:
 - `data/`, `*.db`, backupów ZIP
 - `report/`, `.venv`, `.coverage`
 - katalogu `! Docs/` (notatki lokalne, m.in. ścieżki na dysku)
+
+Katalog [`Docs/`](Docs/README.md) to publiczna instrukcja i ma trafić do repozytorium. Folder `! Docs/` (z wykrzyknikiem w nazwie) to osobne notatki lokalne i jest w `.gitignore`.
 
 Po utworzeniu pustego repozytorium na GitHubie:
 

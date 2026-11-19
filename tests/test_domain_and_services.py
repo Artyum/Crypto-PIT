@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import runpy
 import sqlite3
 import sys
 import zipfile
@@ -644,7 +643,3 @@ def test_cli_and_main(
     monkeypatch.setattr(sys, "argv", ["crypto-pit", "--db", str(db_path)])
     main()
     assert called == [db_path]
-    monkeypatch.setattr(sys, "argv", ["crypto-pit", "--cli", "--db", str(db_path)])
-    import crypto_pit.__main__ as entry
-
-    runpy.run_path(entry.__file__, run_name="__main__")

@@ -122,6 +122,7 @@ start_app.ps1
 run_tests.ps1
 run_lint_check.ps1
 run_audit.ps1 / run_audit.sh
+run_all_checks.ps1
 ```
 
 ## Testy, lint, audyt zależności
@@ -129,6 +130,7 @@ run_audit.ps1 / run_audit.sh
 Wymagane lokalne `.venv`.
 
 ```powershell
+.\run_all_checks.ps1
 .\run_tests.ps1
 .\run_lint_check.ps1
 .\run_audit.ps1

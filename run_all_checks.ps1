@@ -75,7 +75,7 @@ Show-StepResult "Testy" $testExit
 Show-StepResult "Audit" $auditExit
 
 Write-Host ""
-Write-Host "  Logi: report\lint_check.log, report\audit.log"
+Write-Host "  Logi: report\lint_check.log, report\tests.log, report\audit.log"
 Write-Host ""
 
 $overall = $lintExit -bor $testExit -bor $auditExit

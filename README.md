@@ -144,7 +144,7 @@ chmod +x run_audit.sh
 ./run_audit.sh
 ```
 
-- **Testy** — rozliczenie PIT, profile giełd, pola PIT-38, backup, migracja schematu.
+- **Testy** — rozliczenie PIT, profile giełd, pola PIT-38, backup, migracja schematu; log w `report/tests.log`.
 - **Lint** — Ruff (format + check) i basedpyright; log w `report/lint_check.log`.
 - **Audit** — aktualizuje `pip`, potem `pip-audit` na `requirements.txt` i na pakietach w `.venv`; log w `report/audit.log`. Katalog `report/` jest ignorowany przez git.
 

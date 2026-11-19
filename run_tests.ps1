@@ -70,10 +70,23 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-$env:PY_COLORS = '1'
-$env:FORCE_COLOR = '1'
+$env:NO_COLOR = '1'
+$env:FORCE_COLOR = '0'
+$env:TERM = 'dumb'
+$env:CI = '1'
+$env:PYTHONIOENCODING = 'utf-8'
+$env:PYTHONUTF8 = '1'
+
+$ReportDir = Join-Path $Root 'report'
+$Log = Join-Path $ReportDir 'tests.log'
+if (-not (Test-Path -LiteralPath $ReportDir)) {
+    New-Item -ItemType Directory -Path $ReportDir | Out-Null
+}
+
 $TestRoot = Join-Path $Root 'tests'
-$runCoverage = $true
+$runCoverage = -not [bool]$TestTarget
+$pytestTarget = 'tests/'
+$stepTitle = 'pytest tests/'
 
 Write-Host ''
 if ($TestTarget) {
@@ -84,17 +97,127 @@ if ($TestTarget) {
     if (-not (Test-Path -LiteralPath $testFile)) {
         Fail "Plik testow nie istnieje: $testFile"
     }
-    Write-Step "===== Uruchamianie: $testFile =====" 'Magenta'
-    $runCoverage = $false
-    & $Python -m pytest $testFile -v --tb=line --color=yes @PytestArgs
-} else {
-    Write-Step '===== Uruchamianie wszystkich testow =====' 'Magenta'
-    & $Python -m pytest tests/ -v --tb=line --color=yes --cov=crypto_pit --cov-report=term-missing @PytestArgs
+    $pytestTarget = $testFile
+    if ($testFile.StartsWith($Root, [System.StringComparison]::OrdinalIgnoreCase)) {
+        $pytestTarget = $testFile.Substring($Root.Length).TrimStart('\', '/')
+    }
+    $stepTitle = "pytest $pytestTarget"
 }
 
-$pytestExit = $LASTEXITCODE
+Set-Content -LiteralPath $Log -Encoding UTF8 -Value @(
+    '========================================',
+    " TESTY - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
+    '========================================',
+    ''
+)
+
+function Invoke-TestStep {
+    param(
+        [int]$StepNo,
+        [string]$Title,
+        [string[]]$ArgumentList
+    )
+
+    Write-Host "[Krok $StepNo/1] $Title..."
+
+    Add-Content -LiteralPath $Log -Encoding UTF8 -Value @(
+        "--- Krok ${StepNo}/1: $Title ---",
+        (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'),
+        ''
+    )
+
+    $stdout = Join-Path $env:TEMP "tests_stdout_$PID.log"
+    $stderr = Join-Path $env:TEMP "tests_stderr_$PID.log"
+    $commandLine = ($ArgumentList | ForEach-Object {
+        if ($_ -match '[\s"]') { '"{0}"' -f ($_ -replace '"', '\"') } else { $_ }
+    }) -join ' '
+
+    $process = Start-Process `
+        -FilePath $Python `
+        -ArgumentList $commandLine `
+        -WorkingDirectory $Root `
+        -NoNewWindow `
+        -Wait `
+        -PassThru `
+        -RedirectStandardOutput $stdout `
+        -RedirectStandardError $stderr
+    $exitCode = $process.ExitCode
+
+    $esc = [char]27
+    $csi = [regex]::new("$([regex]::Escape($esc.ToString()))\[[0-?]*[ -/]*[@-~]")
+    $osc = [regex]::new("$([regex]::Escape($esc.ToString()))\][^\x07$([regex]::Escape($esc.ToString()))]*(?:\x07|$([regex]::Escape($esc.ToString()))\\)")
+    $oscOrphan = [regex]::new('\]8;[^\s]*?\\([^\\]+?)\\]8;;\\')
+
+    $lines = @()
+    foreach ($path in @($stdout, $stderr)) {
+        if (Test-Path -LiteralPath $path) {
+            $lines += Get-Content -LiteralPath $path -Encoding UTF8 -ErrorAction SilentlyContinue
+        }
+    }
+
+    $lines | ForEach-Object {
+        $text = [string]$_
+        $text = $csi.Replace($text, '')
+        $text = $osc.Replace($text, '')
+        $text = $oscOrphan.Replace($text, '${1}')
+        $text = $text -replace [string][char]0xFFFD, ''
+        $text
+    } | Where-Object {
+        $_ -and
+        $_ -notmatch '^System\.Management\.Automation\.RemoteException$'
+    } | Add-Content -LiteralPath $Log -Encoding UTF8
+
+    Add-Content -LiteralPath $Log -Encoding UTF8 -Value @('', '========================================', '')
+    Remove-Item -LiteralPath $stdout, $stderr -Force -ErrorAction SilentlyContinue
+
+    return $exitCode
+}
+
+$launchArgs = @(
+    '-m', 'pytest', $pytestTarget,
+    '-v', '--tb=line', '--color=no'
+)
+if ($runCoverage) {
+    $launchArgs += @('--cov=crypto_pit', '--cov-report=term-missing')
+}
+if ($PytestArgs) {
+    $launchArgs += $PytestArgs
+}
+
+if ($TestTarget) {
+    Write-Step "===== Uruchamianie: $pytestTarget =====" 'Magenta'
+} else {
+    Write-Step '===== Uruchamianie wszystkich testow =====' 'Magenta'
+}
+
+$pytestExit = Invoke-TestStep 1 $stepTitle $launchArgs
+
+Add-Content -LiteralPath $Log -Encoding UTF8 -Value @(
+    '',
+    '========================================',
+    ' PODSUMOWANIE',
+    '========================================',
+    ''
+)
+if ($pytestExit -eq 0) {
+    Add-Content -LiteralPath $Log -Encoding UTF8 -Value '  [1] PASS'
+} else {
+    Add-Content -LiteralPath $Log -Encoding UTF8 -Value '  [1] FAIL'
+}
+Add-Content -LiteralPath $Log -Encoding UTF8 -Value ''
 
 Write-Host ''
+Write-Host '============ PODSUMOWANIE ============'
+Write-Host ''
+if ($pytestExit -eq 0) {
+    Write-Host '  [1] PASS'
+} else {
+    Write-Host '  [1] FAIL'
+}
+Write-Host ''
+Write-Host "  Log: $Log"
+Write-Host ''
+
 if ($runCoverage) {
     Write-Step '[SPRZATANIE] Usuwanie pliku .coverage...' 'Yellow'
     $coverageFile = Join-Path $Root '.coverage'

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 
 from crypto_pit.domain.enums import TxType
 
@@ -26,6 +26,8 @@ class Transaction:
     fee: float = 0.0
     final_coin: float = 0.0
     confirmed: bool = False
+    nbp_date: date | None = None
+    nbp_table: str = ""
     id: int | None = None
     created_at: str | None = None
     updated_at: str | None = None

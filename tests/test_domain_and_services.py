@@ -222,6 +222,20 @@ def test_backup_numbers_dates_and_errors(tmp_path: Path) -> None:
     assert parsed[0].price == pytest.approx(50)
     assert parsed[0].fee_coin == pytest.approx(4 / 50)
     assert parsed[0].exchange == "Binance"
+    assert parsed[0].nbp_date is None
+    assert parsed[0].nbp_table == ""
+
+    with_nbp = (
+        "Data;Typ;Wartość PLN;Data kursu NBP;Tabela NBP\n"
+        "2026-08-27;Kupno;10;26.08.2026;165/A/NBP/2026\n"
+    )
+    nbp_tx = _parse_transactions(with_nbp)[0]
+    assert nbp_tx.nbp_date == date(2026, 8, 26)
+    assert nbp_tx.nbp_table == "165/A/NBP/2026"
+    with pytest.raises(ValueError, match="data kursu NBP"):
+        _parse_transactions(
+            "Data;Typ;Wartość PLN;Data kursu NBP\n2026-08-27;Kupno;10;nie-data\n"
+        )
 
     holdings_bad = "\n".join(
         ["Coin ID;Symbol;Ilość"]
@@ -253,6 +267,20 @@ def test_backup_numbers_dates_and_errors(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="holdings.csv"):
         parse_backup(incomplete)
 
+    nested = tmp_path / "nested.zip"
+    holdings_csv = "Coin ID;Symbol;Ilość;Lokalizacja\nbitcoin;BTC;1;Ledger\n"
+    with zipfile.ZipFile(nested, "w") as zf:
+        zf.writestr("kopia/transactions.csv", minimal)
+        zf.writestr("kopia/holdings.csv", holdings_csv)
+    nested_data = parse_backup(nested)
+    assert nested_data.transactions[0].exchange == "Binance"
+    assert nested_data.holdings[0].location == "Ledger"
+
+    broken = tmp_path / "broken.zip"
+    broken.write_bytes(b"PK\x03\x04" + b"\x00" * 30)
+    with pytest.raises(ValueError, match="ZIP"):
+        parse_backup(broken)
+
 
 def test_database_crud_filters_and_migration(tmp_path: Path) -> None:
     conn = sqlite3.connect(":memory:")
@@ -272,12 +300,22 @@ def test_database_crud_filters_and_migration(tmp_path: Path) -> None:
     try:
         assert db.get_transaction(1) is None
         assert db.get_holding(1) is None
-        tx = _tx(confirmed=True, currency="USD", value=25, curr_to_pln=4)
+        tx = _tx(
+            confirmed=True,
+            currency="USD",
+            value=25,
+            curr_to_pln=4,
+            nbp_date=date(2026, 8, 26),
+            nbp_table="165/A/NBP/2026",
+        )
         tx_id = db.insert_transaction(tx)
         tx.id = tx_id
         tx.note = "zmiana"
         db.update_transaction(tx)
-        assert db.get_transaction(tx_id) is not None
+        stored = db.get_transaction(tx_id)
+        assert stored is not None
+        assert stored.nbp_date == date(2026, 8, 26)
+        assert stored.nbp_table == "165/A/NBP/2026"
         assert db.list_transactions(year=2024, tx_type=TxType.BUY)
         assert db.list_transactions(year=1999) == []
         with pytest.raises(ValueError):
@@ -444,18 +482,28 @@ def test_database_crud_filters_and_migration(tmp_path: Path) -> None:
     raw.close()
     added = Database(plain)
     try:
-        assert added.list_transactions()[0].confirmed is False
+        migrated_tx = added.list_transactions()[0]
+        assert migrated_tx.confirmed is False
+        assert migrated_tx.nbp_date is None
+        assert migrated_tx.nbp_table == ""
     finally:
         added.close()
 
 
 class _Response:
     def __init__(
-        self, status_code: int, payload: object | None = None, broken: bool = False
+        self,
+        status_code: int,
+        payload: object | None = None,
+        broken: bool = False,
+        text: str = "",
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.status_code = status_code
         self._payload = payload
         self._broken = broken
+        self.text = text
+        self.headers = headers or {}
 
     def json(self) -> object:
         if self._broken:
@@ -472,24 +520,28 @@ def test_nbp_and_crypto_rates(monkeypatch: pytest.MonkeyPatch) -> None:
     assert pln.mid == 1.0
 
     calls = {"n": 0}
+    monkeypatch.setattr("crypto_pit.services.nbp_rates.RETRY_PAUSE_S", 0)
 
-    def fake_get(url: str, params: dict | None = None, timeout: int = 0) -> _Response:
+    def fake_get(
+        url: str,
+        params: dict | None = None,
+        timeout: int = 0,
+        headers: dict[str, str] | None = None,
+    ) -> _Response:
         calls["n"] += 1
-        if calls["n"] == 1:
-            raise requests.ConnectionError("offline")
         if "simple/price" in url:
             if params and params.get("ids") == "broken":
                 return _Response(200, ["nie-slownik"])
             if params and params.get("ids") == "missing,partial":
                 return _Response(200, {"partial": {"usd": "x", "pln": 1}})
             return _Response(200, {"bitcoin": {"usd": 2, "pln": "8.5"}})
-        if calls["n"] == 2:
-            return _Response(404)
-        if calls["n"] == 3:
+        if calls["n"] <= 3:
+            raise requests.ConnectionError("offline")
+        if calls["n"] <= 6:
             return _Response(500)
-        if calls["n"] == 4:
+        if calls["n"] == 7:
             return _Response(200, {"rates": []})
-        if calls["n"] == 5:
+        if calls["n"] == 8:
             return _Response(
                 200, {"rates": [{"mid": 0, "effectiveDate": "2024-01-09"}]}
             )
@@ -504,7 +556,7 @@ def test_nbp_and_crypto_rates(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("crypto_pit.services.nbp_rates.requests.get", fake_get)
     with pytest.raises(RateFetchError, match="połączenia"):
         fetch_pln_rate("USD", day)
-    with pytest.raises(RateFetchError, match="status 500"):
+    with pytest.raises(RateFetchError, match="niedostępne"):
         fetch_pln_rate("USD", day)
     with pytest.raises(RateFetchError, match="Niepoprawna"):
         fetch_pln_rate("USD", day)
@@ -521,7 +573,12 @@ def test_nbp_and_crypto_rates(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     calls["n"] = 100
 
-    def only_404(url: str, params: dict | None = None, timeout: int = 0) -> _Response:
+    def only_404(
+        url: str,
+        params: dict | None = None,
+        timeout: int = 0,
+        headers: dict[str, str] | None = None,
+    ) -> _Response:
         return _Response(404)
 
     monkeypatch.setattr("crypto_pit.services.nbp_rates.requests.get", only_404)
@@ -680,3 +737,83 @@ def test_cli_and_main(
     monkeypatch.setattr(sys, "argv", ["crypto-pit", "--db", str(db_path)])
     main()
     assert called == [db_path]
+
+
+def test_nbp_picks_newest_table_on_or_before_day(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[str] = []
+
+    def fake_get(
+        url: str,
+        params: dict | None = None,
+        timeout: int = 0,
+        headers: dict[str, str] | None = None,
+    ) -> _Response:
+        seen.append(url)
+        return _Response(
+            200,
+            {
+                "currency": "dolar amerykański",
+                "rates": [
+                    {
+                        "mid": 3.6839,
+                        "effectiveDate": "2026-08-21",
+                        "no": "162/A/NBP/2026",
+                    },
+                    {
+                        "mid": 3.6852,
+                        "effectiveDate": "2026-08-26",
+                        "no": "165/A/NBP/2026",
+                    },
+                    {
+                        "mid": 3.7151,
+                        "effectiveDate": "2026-08-27",
+                        "no": "166/A/NBP/2026",
+                    },
+                ],
+            },
+        )
+
+    monkeypatch.setattr("crypto_pit.services.nbp_rates.requests.get", fake_get)
+    rate = fetch_pln_rate("usd", date(2026, 8, 26))
+    assert rate.effective_date == date(2026, 8, 26)
+    assert rate.mid == pytest.approx(3.6852)
+    assert rate.table_no == "165/A/NBP/2026"
+    assert seen == [
+        "https://api.nbp.pl/api/exchangerates/rates/A/USD/2026-08-17/2026-08-26/"
+    ]
+
+
+def test_nbp_retries_gateway_404(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = {"n": 0}
+    monkeypatch.setattr("crypto_pit.services.nbp_rates.RETRY_PAUSE_S", 0)
+
+    def fake_get(
+        url: str,
+        params: dict | None = None,
+        timeout: int = 0,
+        headers: dict[str, str] | None = None,
+    ) -> _Response:
+        calls["n"] += 1
+        if calls["n"] < 3:
+            return _Response(404, headers={"Content-Type": "text/html"})
+        return _Response(
+            200,
+            {
+                "currency": "dolar",
+                "rates": [
+                    {
+                        "mid": "3.6852",
+                        "effectiveDate": "2026-08-26",
+                        "no": "165/A/NBP/2026",
+                    }
+                ],
+            },
+        )
+
+    monkeypatch.setattr("crypto_pit.services.nbp_rates.requests.get", fake_get)
+    rate = fetch_pln_rate("USD", date(2026, 8, 26))
+    assert calls["n"] == 3
+    assert rate.effective_date == date(2026, 8, 26)
+    assert rate.mid == pytest.approx(3.6852)

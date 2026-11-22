@@ -145,7 +145,9 @@ class TransactionDialog:
         self._updating = False
         self._last_calc: CalcResult | None = None
         self._rate_busy = False
-        self._last_nbp: NbpRate | None = None
+        self._nbp_date = tx.nbp_date if tx else None
+        self._nbp_table = tx.nbp_table if tx else ""
+        self._nbp_name = ""
         self._user_fields: set[str] = set()
         self._lockable_entries: list[ttk.Entry] = []
         self._lockable_buttons: list[ttk.Button] = []
@@ -401,6 +403,9 @@ class TransactionDialog:
     def _tx_type(self) -> TxType:
         return _TYPE_MAP[self.type_var.get()]
 
+    def _currency_code(self) -> str:
+        return self.currency_var.get().strip().upper()
+
     def _set_fields_locked(self, locked: bool) -> None:
         state = "disabled" if locked else "normal"
         for entry in self._lockable_entries:
@@ -422,7 +427,7 @@ class TransactionDialog:
         )
         self.asset_var.trace_add("write", lambda *_: self._force_asset_caps())
         self.currency_var.trace_add("write", lambda *_: self._on_currency_change())
-        self.rate_var.trace_add("write", lambda *_: self._recalc())
+        self.rate_var.trace_add("write", lambda *_: self._on_rate_edit())
         self.value_var.trace_add("write", lambda *_: self._on_field_edit("value"))
         for key in _PROFILE_INPUT_KEYS:
             self._vars[key].trace_add(
@@ -509,6 +514,8 @@ class TransactionDialog:
         self._refresh_user_markers()
         if not self.confirmed_var.get():
             self._sync_rate_widgets()
+        else:
+            self._show_nbp_info()
         self._recalc()
 
     def _migrate_inputs(
@@ -536,11 +543,25 @@ class TransactionDialog:
     def _on_currency_change(self) -> None:
         if self.confirmed_var.get():
             return
+        if not self._updating:
+            self._clear_nbp()
         self._sync_rate_widgets()
         self._recalc()
 
+    def _on_rate_edit(self) -> None:
+        if not self._updating and self._nbp_date is not None:
+            self._clear_nbp()
+            self._show_nbp_info()
+        self._recalc()
+
+    def _clear_nbp(self) -> None:
+        self._nbp_date = None
+        self._nbp_table = ""
+        self._nbp_name = ""
+
     def _sync_rate_widgets(self) -> None:
-        if self.currency_var.get().strip().upper() == "PLN":
+        if self._currency_code() == "PLN":
+            self._clear_nbp()
             self._updating = True
             try:
                 self.rate_var.set("1")
@@ -548,16 +569,27 @@ class TransactionDialog:
                 self._updating = False
             self.rate_entry.configure(state="disabled")
             self.rate_btn.configure(state="disabled")
-            self._reset_nbp_info("Dla PLN kurs = 1")
+            self.rate_info.config(text="Dla PLN kurs = 1")
+            self.rate_details_btn.grid_remove()
         else:
             self.rate_entry.configure(state="normal")
             self.rate_btn.configure(state="normal")
-            self._reset_nbp_info()
+            self._show_nbp_info()
 
-    def _reset_nbp_info(self, text: str = "") -> None:
-        self._last_nbp = None
-        self.rate_info.config(text=text)
-        self.rate_details_btn.grid_remove()
+    def _show_nbp_info(self) -> None:
+        if self._nbp_date is None:
+            self.rate_details_btn.grid_remove()
+            if self._currency_code() != "PLN":
+                self.rate_info.config(text="")
+            return
+        code = self._currency_code()
+        self.rate_info.config(
+            text=(
+                f"NBP: 1 {code} = {self.rate_var.get()} PLN"
+                f" ({self._nbp_date.isoformat()})"
+            )
+        )
+        self.rate_details_btn.grid()
 
     def _clear_outputs(self) -> None:
         for var in self._out_vars:
@@ -613,7 +645,7 @@ class TransactionDialog:
     def _fetch_rate(self) -> None:
         if self._rate_busy:
             return
-        code = self.currency_var.get().strip().upper()
+        code = self._currency_code()
         if code == "PLN":
             self.rate_var.set("1")
             return
@@ -627,7 +659,8 @@ class TransactionDialog:
         before = (dt - timedelta(days=1)).date()
         self._rate_busy = True
         self.rate_btn.configure(state="disabled", text="…")
-        self._reset_nbp_info(f"Szukam kursu {code}/PLN…")
+        self.rate_info.config(text=f"Szukam kursu {code}/PLN…")
+        self.rate_details_btn.grid_remove()
 
         def worker() -> None:
             try:
@@ -641,45 +674,45 @@ class TransactionDialog:
 
     def _on_rate_ok(self, result: NbpRate) -> None:
         self._rate_busy = False
-        self._last_nbp = result
+        self._nbp_date = result.effective_date
+        self._nbp_table = result.table_no
+        self._nbp_name = result.currency_name
         self.rate_btn.configure(state="normal", text="NBP")
         self.rate_entry.configure(state="normal")
-        self.rate_var.set(_fmt_num(result.mid, 6))
-        self.rate_info.config(
-            text=(
-                f"NBP: 1 {result.code} = {result.mid} PLN"
-                f" ({result.effective_date.isoformat()})"
-            )
-        )
-        self.rate_details_btn.grid()
+        self._updating = True
+        try:
+            self.rate_var.set(_fmt_num(result.mid, 6))
+        finally:
+            self._updating = False
+        self._show_nbp_info()
         self._recalc()
 
     def _show_rate_details(self) -> None:
-        r = self._last_nbp
-        if r is None:
+        if self._nbp_date is None:
             return
+        code = self._currency_code()
+        name = f"{self._nbp_name} ({code})" if self._nbp_name else code
+        table = self._nbp_table or "—"
         showinfo(
             "Kurs NBP",
             (
-                f"Pobrano z API NBP (tabela A):\n\n"
-                f"Waluta: {r.currency_name} ({r.code})\n"
-                f"Kurs średni: 1 {r.code} = {r.mid} PLN\n"
-                f"Data tabeli: {r.effective_date.isoformat()}\n"
-                f"Nr tabeli: {r.table_no}\n\n"
-                f"Szukano kursu z dnia przed transakcją "
-                f"({r.requested_before.isoformat()})."
+                "Pobrano z API NBP (tabela A):\n\n"
+                f"Waluta: {name}\n"
+                f"Kurs średni: 1 {code} = {self.rate_var.get()} PLN\n"
+                f"Data tabeli: {self._nbp_date.isoformat()}\n"
+                f"Nr tabeli: {table}"
             ),
             parent=self.dlg,
         )
 
     def _on_rate_err(self, message: str) -> None:
         self._rate_busy = False
-        code = self.currency_var.get().strip().upper()
+        code = self._currency_code()
         self.rate_btn.configure(
             state="normal" if code != "PLN" else "disabled",
             text="NBP",
         )
-        self._reset_nbp_info()
+        self._show_nbp_info()
         showerror(
             "Kurs NBP",
             f"{message}\nMożesz wpisać kurs ręcznie.",
@@ -709,6 +742,7 @@ class TransactionDialog:
                 )
             c = self._last_calc
             amount = c["final_coin"] if tx_type == TxType.BUY else c["coin_amount"]
+            currency = self._currency_code() or "PLN"
 
             new_tx = Transaction(
                 id=self.tx.id if self.tx else None,
@@ -720,7 +754,7 @@ class TransactionDialog:
                 fee_pln=c["fee_pln"],
                 exchange=exchange,
                 note=note,
-                currency=self.currency_var.get().strip().upper() or "PLN",
+                currency=currency,
                 value=c["value"],
                 curr_to_pln=c["curr_to_pln"],
                 coin_amount=c["coin_amount"],
@@ -730,6 +764,8 @@ class TransactionDialog:
                 fee=c["fee"],
                 final_coin=c["final_coin"],
                 confirmed=bool(self.confirmed_var.get()),
+                nbp_date=None if currency == "PLN" else self._nbp_date,
+                nbp_table="" if currency == "PLN" else self._nbp_table,
             )
             if self.tx:
                 self.db.update_transaction(new_tx)

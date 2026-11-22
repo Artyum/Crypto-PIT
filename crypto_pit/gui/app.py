@@ -169,7 +169,11 @@ class CryptoPitApp(tk.Tk):
             return
         txs = self.db.list_transactions()
         holdings = self.db.list_holdings()
-        export_backup(path, txs, holdings)
+        try:
+            export_backup(path, txs, holdings)
+        except OSError as exc:
+            showerror("Backup", str(exc), parent=self)
+            return
         showinfo(
             "Backup",
             f"Zapisano {len(txs)} transakcji i {len(holdings)} pozycji portfela:\n"

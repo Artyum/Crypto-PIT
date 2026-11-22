@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from crypto_pit.config import DEFAULT_DB_PATH
@@ -29,8 +29,16 @@ _TX_KEEP_COLUMNS = (
     "fee",
     "final_coin",
     "confirmed",
+    "nbp_date",
+    "nbp_table",
     "created_at",
     "updated_at",
+)
+
+_TX_ADDED_COLUMNS = (
+    ("confirmed", "INTEGER NOT NULL DEFAULT 0"),
+    ("nbp_date", "TEXT"),
+    ("nbp_table", "TEXT"),
 )
 
 _LEGACY_TX_COLUMNS = frozenset(
@@ -64,6 +72,8 @@ CREATE TABLE IF NOT EXISTS transactions (
     fee REAL NOT NULL DEFAULT 0,
     final_coin REAL NOT NULL DEFAULT 0,
     confirmed INTEGER NOT NULL DEFAULT 0,
+    nbp_date TEXT,
+    nbp_table TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -114,6 +124,16 @@ def _row_str(row: sqlite3.Row, key: str, default: str = "") -> str:
     return str(val)
 
 
+def _row_date(row: sqlite3.Row, key: str) -> date | None:
+    raw = _row_str(row, key)
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
 def _row_bool(row: sqlite3.Row, key: str, default: bool = False) -> bool:
     try:
         val = row[key]
@@ -134,6 +154,35 @@ def _row_to_holding(row: sqlite3.Row) -> Holding:
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
+
+
+def _tx_fields(tx: Transaction) -> tuple[object, ...]:
+    return (
+        tx.date.isoformat(timespec="minutes"),
+        tx.type.value,
+        tx.asset,
+        tx.amount,
+        tx.value_pln,
+        tx.fee_pln,
+        tx.exchange,
+        tx.note,
+        tx.currency,
+        tx.value,
+        tx.curr_to_pln,
+        tx.coin_amount,
+        tx.price,
+        tx.price_pln,
+        tx.fee_coin,
+        tx.fee,
+        tx.final_coin,
+        1 if tx.confirmed else 0,
+        tx.nbp_date.isoformat() if tx.nbp_date else None,
+        tx.nbp_table or None,
+    )
+
+
+def _tx_insert_params(tx: Transaction, now: str) -> tuple[object, ...]:
+    return (*_tx_fields(tx), now, now)
 
 
 def _row_to_tx(row: sqlite3.Row) -> Transaction:
@@ -157,6 +206,8 @@ def _row_to_tx(row: sqlite3.Row) -> Transaction:
         fee=_row_float(row, "fee"),
         final_coin=_row_float(row, "final_coin"),
         confirmed=_row_bool(row, "confirmed"),
+        nbp_date=_row_date(row, "nbp_date"),
+        nbp_table=_row_str(row, "nbp_table"),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -183,11 +234,12 @@ class Database:
         if tx_cols:
             if tx_cols & _LEGACY_TX_COLUMNS:
                 self._rebuild_transactions_table(tx_cols)
-            elif "confirmed" not in tx_cols:
-                self._conn.execute(
-                    "ALTER TABLE transactions ADD COLUMN confirmed "
-                    "INTEGER NOT NULL DEFAULT 0"
-                )
+            else:
+                for name, ddl in _TX_ADDED_COLUMNS:
+                    if name not in tx_cols:
+                        self._conn.execute(
+                            f"ALTER TABLE transactions ADD COLUMN {name} {ddl}"
+                        )
 
         holding_cols = {
             row[1]
@@ -206,6 +258,9 @@ class Database:
             elif col == "confirmed":
                 insert_cols.append(col)
                 select_parts.append("0 AS confirmed")
+            elif col in {"nbp_date", "nbp_table"}:
+                insert_cols.append(col)
+                select_parts.append(f"NULL AS {col}")
 
         self._conn.execute("DROP INDEX IF EXISTS idx_transactions_import_hash")
         self._conn.execute("ALTER TABLE transactions RENAME TO transactions_legacy")
@@ -231,6 +286,8 @@ class Database:
                 fee REAL NOT NULL DEFAULT 0,
                 final_coin REAL NOT NULL DEFAULT 0,
                 confirmed INTEGER NOT NULL DEFAULT 0,
+                nbp_date TEXT,
+                nbp_table TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -308,32 +365,11 @@ class Database:
             INSERT INTO transactions (
                 date, type, asset, amount, value_pln, fee_pln, exchange, note,
                 currency, value, curr_to_pln, coin_amount, price, price_pln,
-                fee_coin, fee, final_coin, confirmed,
+                fee_coin, fee, final_coin, confirmed, nbp_date, nbp_table,
                 created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (
-                tx.date.isoformat(timespec="minutes"),
-                tx.type.value,
-                tx.asset,
-                tx.amount,
-                tx.value_pln,
-                tx.fee_pln,
-                tx.exchange,
-                tx.note,
-                tx.currency,
-                tx.value,
-                tx.curr_to_pln,
-                tx.coin_amount,
-                tx.price,
-                tx.price_pln,
-                tx.fee_coin,
-                tx.fee,
-                tx.final_coin,
-                1 if tx.confirmed else 0,
-                now,
-                now,
-            ),
+            _tx_insert_params(tx, now),
         )
         self._conn.commit()
         if cur.lastrowid is None:
@@ -350,29 +386,12 @@ class Database:
                 fee_pln = ?, exchange = ?, note = ?,
                 currency = ?, value = ?, curr_to_pln = ?, coin_amount = ?,
                 price = ?, price_pln = ?, fee_coin = ?, fee = ?,
-                final_coin = ?, confirmed = ?,
+                final_coin = ?, confirmed = ?, nbp_date = ?, nbp_table = ?,
                 updated_at = ?
             WHERE id = ?
             """,
             (
-                tx.date.isoformat(timespec="minutes"),
-                tx.type.value,
-                tx.asset,
-                tx.amount,
-                tx.value_pln,
-                tx.fee_pln,
-                tx.exchange,
-                tx.note,
-                tx.currency,
-                tx.value,
-                tx.curr_to_pln,
-                tx.coin_amount,
-                tx.price,
-                tx.price_pln,
-                tx.fee_coin,
-                tx.fee,
-                tx.final_coin,
-                1 if tx.confirmed else 0,
+                *_tx_fields(tx),
                 _now(),
                 tx.id,
             ),
@@ -478,32 +497,11 @@ class Database:
                     INSERT INTO transactions (
                         date, type, asset, amount, value_pln, fee_pln, exchange, note,
                         currency, value, curr_to_pln, coin_amount, price, price_pln,
-                        fee_coin, fee, final_coin, confirmed,
+                        fee_coin, fee, final_coin, confirmed, nbp_date, nbp_table,
                         created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (
-                        tx.date.isoformat(timespec="minutes"),
-                        tx.type.value,
-                        tx.asset,
-                        tx.amount,
-                        tx.value_pln,
-                        tx.fee_pln,
-                        tx.exchange,
-                        tx.note,
-                        tx.currency,
-                        tx.value,
-                        tx.curr_to_pln,
-                        tx.coin_amount,
-                        tx.price,
-                        tx.price_pln,
-                        tx.fee_coin,
-                        tx.fee,
-                        tx.final_coin,
-                        1 if tx.confirmed else 0,
-                        now,
-                        now,
-                    ),
+                    _tx_insert_params(tx, now),
                 )
 
             self._clear_table("holdings")

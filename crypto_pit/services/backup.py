@@ -5,7 +5,7 @@ import io
 import re
 import zipfile
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from crypto_pit.datetime_fmt import parse_naive
@@ -31,6 +31,8 @@ TX_COLUMNS = [
     "Giełda",
     "Uwagi",
     "Zatwierdzone",
+    "Data kursu NBP",
+    "Tabela NBP",
 ]
 
 HOLDINGS_COLUMNS = ["Coin ID", "Symbol", "Ilość", "Lokalizacja"]
@@ -68,6 +70,15 @@ def _clean_amount(val: object) -> float:
     except ValueError:
         return 0.0
     return -num if negative else num
+
+
+def _parse_iso_date(raw: str) -> date | None:
+    if not raw:
+        return None
+    parsed = _parse_date(raw)
+    if parsed is None:
+        raise ValueError(f"niepoprawna data kursu NBP: {raw}")
+    return parsed.date()
 
 
 def _parse_date(raw: object) -> datetime | None:
@@ -158,6 +169,8 @@ def _transactions_csv(transactions: list[Transaction]) -> str:
             "Giełda": tx.exchange,
             "Uwagi": tx.note.replace("\n", " | "),
             "Zatwierdzone": "1" if tx.confirmed else "0",
+            "Data kursu NBP": tx.nbp_date.isoformat() if tx.nbp_date else "",
+            "Tabela NBP": tx.nbp_table,
         }
         for tx in sorted(transactions, key=lambda t: (t.date, t.id or 0))
     ]
@@ -231,6 +244,8 @@ def _parse_transactions(text: str) -> list[Transaction]:
                     final_coin=_opt_float(row, "Ilość końcowa", default=amount),
                     confirmed=_cell(row, "Zatwierdzone").lower()
                     in ("1", "true", "tak", "yes", "x"),
+                    nbp_date=_parse_iso_date(_cell(row, "Data kursu NBP")),
+                    nbp_table=_cell(row, "Tabela NBP"),
                 )
             )
         except (ValueError, TypeError, KeyError) as exc:
@@ -286,18 +301,48 @@ def export_backup(
         zf.writestr(HOLDINGS_CSV, _holdings_csv(holdings))
 
 
+def _zip_entry(names: list[str], filename: str) -> str | None:
+    wanted = filename.lower()
+    exact = [name for name in names if name.replace("\\", "/").lower() == wanted]
+    if len(exact) == 1:
+        return exact[0]
+    if len(exact) > 1:
+        raise ValueError(f"W archiwum jest więcej niż jeden plik {filename}.")
+    nested = [
+        name
+        for name in names
+        if name.replace("\\", "/").rstrip("/").lower().endswith("/" + wanted)
+        and not name.endswith("/")
+    ]
+    if len(nested) == 1:
+        return nested[0]
+    if len(nested) > 1:
+        raise ValueError(f"W archiwum jest więcej niż jeden plik {filename}.")
+    return None
+
+
+def _zip_text(zf: zipfile.ZipFile, name: str) -> str:
+    try:
+        return zf.read(name).decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"Plik {Path(name).name} nie jest zapisany w UTF-8.") from exc
+
+
 def parse_backup(path: Path | str) -> BackupData:
     path = Path(path)
     if not zipfile.is_zipfile(path):
         raise ValueError("Backup musi być plikiem ZIP (transakcje + portfel).")
 
-    with zipfile.ZipFile(path, "r") as zf:
-        names = {n.lower(): n for n in zf.namelist()}
-        tx_name = names.get(TX_CSV)
-        h_name = names.get(HOLDINGS_CSV)
-        if tx_name is None or h_name is None:
-            raise ValueError(f"Archiwum musi zawierać {TX_CSV} i {HOLDINGS_CSV}.")
-        return BackupData(
-            transactions=_parse_transactions(zf.read(tx_name).decode("utf-8-sig")),
-            holdings=_parse_holdings(zf.read(h_name).decode("utf-8-sig")),
-        )
+    try:
+        with zipfile.ZipFile(path, "r") as zf:
+            names = zf.namelist()
+            tx_name = _zip_entry(names, TX_CSV)
+            h_name = _zip_entry(names, HOLDINGS_CSV)
+            if tx_name is None or h_name is None:
+                raise ValueError(f"Archiwum musi zawierać {TX_CSV} i {HOLDINGS_CSV}.")
+            return BackupData(
+                transactions=_parse_transactions(_zip_text(zf, tx_name)),
+                holdings=_parse_holdings(_zip_text(zf, h_name)),
+            )
+    except zipfile.BadZipFile as exc:
+        raise ValueError("Backup musi być plikiem ZIP (transakcje + portfel).") from exc

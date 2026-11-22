@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import date
 from pathlib import Path
 
 from crypto_pit.datetime_fmt import parse_naive
@@ -130,6 +131,8 @@ def test_backup_roundtrip(tmp_path: Path) -> None:
         fee=10.0,
         final_coin=1.5,
         confirmed=True,
+        nbp_date=date(2024, 2, 29),
+        nbp_table="41/A/NBP/2024",
     )
     holdings = [
         Holding(coin_id="bitcoin", symbol="BTC", amount=0.5, location="Binance"),
@@ -142,6 +145,8 @@ def test_backup_roundtrip(tmp_path: Path) -> None:
     assert data.transactions[0].asset == "ETH"
     assert data.transactions[0].type == TxType.SELL
     assert data.transactions[0].confirmed is True
+    assert data.transactions[0].nbp_date == date(2024, 2, 29)
+    assert data.transactions[0].nbp_table == "41/A/NBP/2024"
     assert len(data.holdings) == 2
 
     db = Database(tmp_path / "restore.db")
@@ -151,7 +156,10 @@ def test_backup_roundtrip(tmp_path: Path) -> None:
         )
         n_tx, n_h = db.replace_all_data(data.transactions, data.holdings)
         assert (n_tx, n_h) == (1, 2)
-        assert len(db.list_transactions()) == 1
+        restored = db.list_transactions()
+        assert len(restored) == 1
+        assert restored[0].nbp_date == date(2024, 2, 29)
+        assert restored[0].nbp_table == "41/A/NBP/2024"
         assert all(h.coin_id != "old" for h in db.list_holdings())
     finally:
         db.close()

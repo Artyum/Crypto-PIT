@@ -14,7 +14,7 @@ Polecenia są w menu **Plik**.
 
 W pliku są dwie sekcje:
 
-1. **TRANSAKCJE** — kolumny: ID, Data, Typ, Walor, Ilość, Waluta, Kurs, Cena, Wartość PLN, Prowizja PLN, Prowizja (walor), Przychód PIT, Koszt PIT, Uwagi.
+1. **TRANSAKCJE** — kolumny: ID, Data, Typ, Walor, Ilość, Waluta, Kurs, Data kursu NBP, Cena, Wartość PLN, Prowizja PLN, Prowizja (walor), Przychód PIT, Koszt PIT, Uwagi.
 2. **ROZLICZENIE LAT (PIT-38)** — kolumny jak na zakładce [Rozliczenie lat](rozliczenie-lat.md): Rok, Przychód, Koszty roku, Koszty lat ub., Razem, Dochód, Do przeniesienia, Podatek 19%, Liczba transakcji.
 
 Przywracanie danych do bazy idzie przez backup ZIP opisany niżej.
@@ -23,8 +23,10 @@ Przywracanie danych do bazy idzie przez backup ZIP opisany niżej.
 
 **Eksport backupu…** zapisuje archiwum (domyślnie `crypto-pit-backup.zip`) z dwoma plikami CSV:
 
-- `transactions.csv` — transakcje,
+- `transactions.csv` — transakcje, w tym data i numer tabeli NBP, jeśli kurs był pobrany przyciskiem **NBP**;
 - `holdings.csv` — pozycje portfela (identyfikator coina, symbol, ilość, lokalizacja).
+
+Starszy backup bez kolumn daty i tabeli NBP wczytuje się tak samo. Pliki mogą leżeć w katalogu wewnątrz ZIP.
 
 Po zapisie program podaje, ile rekordów trafiło do pliku.
 

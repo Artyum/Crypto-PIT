@@ -37,9 +37,45 @@ class CryptoPrice:
 class CryptoRatesService:
     def __init__(self) -> None:
         self._prices: dict[str, CryptoPrice] = {}
+        self._symbol_ids: dict[str, str] = {}
 
     def get_cached_price(self, coin_id: str) -> CryptoPrice | None:
         return self._prices.get(coin_id)
+
+    def remember_symbol(self, symbol: str, coin_id: str) -> None:
+        key = symbol.strip().upper()
+        cid = coin_id.strip()
+        if key and cid:
+            self._symbol_ids[key] = cid
+
+    def get_cached_price_for_symbol(self, symbol: str) -> CryptoPrice | None:
+        cid = self._symbol_ids.get(symbol.strip().upper())
+        if not cid:
+            return None
+        return self.get_cached_price(cid)
+
+    def resolve_symbols(self, symbols: list[str]) -> dict[str, str]:
+        mapping: dict[str, str] = {}
+        for raw in symbols:
+            key = raw.strip().upper()
+            if not key:
+                continue
+            cached = self._symbol_ids.get(key)
+            if cached:
+                mapping[key] = cached
+                continue
+            try:
+                found = self.search_coins(key, limit=10)
+            except CryptoRateFetchError:
+                continue
+            chosen = next((c for c in found if c.symbol.upper() == key), None)
+            if chosen is None and found:
+                chosen = found[0]
+            if chosen is None:
+                continue
+            self._symbol_ids[key] = chosen.id
+            mapping[key] = chosen.id
+        return mapping
 
     def search_coins(self, query: str, *, limit: int = 40) -> list[CoinInfo]:
         q = (query or "").strip()

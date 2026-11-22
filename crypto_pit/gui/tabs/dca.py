@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import tkinter as tk
 from tkinter import ttk
 from typing import TYPE_CHECKING
@@ -7,7 +8,7 @@ from typing import TYPE_CHECKING
 from crypto_pit.datetime_fmt import local_now, make_local_datetime
 from crypto_pit.domain.models import Transaction
 from crypto_pit.gui.datetime_picker import ask_datetime
-from crypto_pit.gui.formatters import fmt_datetime, fmt_money, fmt_qty
+from crypto_pit.gui.formatters import fmt_datetime, fmt_money, fmt_qty, fmt_rate
 from crypto_pit.gui.widgets import (
     FilterDropdown,
     autosize_columns,
@@ -15,6 +16,7 @@ from crypto_pit.gui.widgets import (
     insert_row,
     setup_columns,
 )
+from crypto_pit.services.crypto_rates import CryptoRateFetchError
 from crypto_pit.services.dca import (
     DcaResult,
     buy_years,
@@ -41,6 +43,8 @@ class DcaTab:
 
         self._defaults_applied = False
         self._applying = False
+        self._rates_loaded = False
+        self._fetch_busy = False
         self._result = DcaResult((), {}, 0, "")
         self.from_var = tk.StringVar()
         self.to_var = tk.StringVar()
@@ -55,15 +59,19 @@ class DcaTab:
         summary_wrap.grid(row=1, column=0, sticky="nsew")
         setup_columns(
             self.summary,
-            ("asset", "count", "total_pln", "total_qty", "dca"),
+            ("asset", "count", "total_pln", "total_qty", "usd", "pln", "dca"),
             {
                 "asset": "Walor",
                 "count": "Zakupy",
                 "total_pln": "Suma PLN",
                 "total_qty": "Ilość",
+                "usd": "Kurs USD",
+                "pln": "Kurs PLN",
                 "dca": "DCA PLN",
             },
             anchors={
+                "usd": tk.E,
+                "pln": tk.E,
                 "count": tk.E,
                 "total_pln": tk.E,
                 "total_qty": tk.E,
@@ -124,11 +132,53 @@ class DcaTab:
         )
         ttk.Button(toolbar, text="Wybierz…", command=self._pick_to).pack(side=tk.LEFT)
 
+    def on_show(self) -> None:
+        self.refresh()
+        assets = [row.asset for row in self._result.rows]
+        missing = any(
+            self.app.crypto_rates.get_cached_price_for_symbol(asset) is None
+            for asset in assets
+        )
+        if not self._rates_loaded or missing:
+            self._fetch_rates(force=False)
+
     def refresh(self) -> None:
         transactions = self.app.db.list_transactions()
         self._refresh_years(transactions)
         self._apply_default_dates(transactions)
         self._render(transactions)
+
+    def _fetch_rates(self, *, force: bool) -> None:
+        if self._fetch_busy:
+            return
+        assets = [row.asset for row in self._result.rows]
+        if not assets:
+            self._rates_loaded = True
+            return
+        self._fetch_busy = True
+        rates = self.app.crypto_rates
+        holdings = self.app.db.list_holdings()
+
+        def worker() -> None:
+            try:
+                for holding in holdings:
+                    rates.remember_symbol(holding.symbol, holding.coin_id)
+                mapping = rates.resolve_symbols(assets)
+                rates.fetch_prices(list(mapping.values()), force_refresh=force)
+                err = ""
+            except CryptoRateFetchError as exc:
+                err = str(exc)
+            self.frame.after(0, lambda: self._on_fetch_done(err))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_fetch_done(self, error: str) -> None:
+        self._fetch_busy = False
+        self._rates_loaded = True
+        transactions = self.app.db.list_transactions()
+        self._render(transactions)
+        if error:
+            self.status_var.set(error)
 
     def _refresh_years(self, transactions: list[Transaction]) -> None:
         values = [_ALL_YEARS, *[str(year) for year in buy_years(transactions)]]
@@ -216,6 +266,11 @@ class DcaTab:
         self.summary.delete(*self.summary.get_children())
         self.detail.delete(*self.detail.get_children())
         for index, row in enumerate(query.result.rows):
+            price = self.app.crypto_rates.get_cached_price_for_symbol(row.asset)
+            usd_s = pln_s = "—"
+            if price is not None:
+                usd_s = fmt_rate(price.usd)
+                pln_s = fmt_rate(price.pln)
             insert_row(
                 self.summary,
                 (
@@ -223,6 +278,8 @@ class DcaTab:
                     row.count,
                     fmt_money(row.total_pln),
                     fmt_qty(row.total_qty),
+                    usd_s,
+                    pln_s,
                     fmt_money(row.dca),
                 ),
                 iid=row.asset,

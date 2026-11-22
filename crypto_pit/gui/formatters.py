@@ -7,6 +7,7 @@ __all__ = [
     "fmt_money",
     "fmt_money_compact",
     "fmt_qty",
+    "fmt_rate",
     "parse_datetime",
     "parse_float",
 ]
@@ -25,6 +26,15 @@ def fmt_money_compact(v: float) -> str:
 def fmt_qty(value: float, digits: int = 8) -> str:
     text = f"{value:.{digits}f}".rstrip("0").rstrip(".")
     return text if text else "0"
+
+
+def fmt_rate(v: float | None) -> str:
+    if v is None:
+        return "—"
+    if v >= 1000:
+        return fmt_money(v)
+    s = f"{v:.8f}".rstrip("0").rstrip(".")
+    return s if s else "0"
 
 
 def parse_float(text: str) -> float:

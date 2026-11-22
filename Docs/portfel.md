@@ -21,11 +21,11 @@ Usuwanie pyta: „Usunąć {symbol} ({lokalizacja}) z portfela?”
 
 ## Kursy
 
-Kolumny: Waluta, Lokalizacja, Ilość, Kurs USD, Kurs PLN, Wartość PLN, Status.
+Kolumny: Waluta, Lokalizacja, Ilość, Wartość USD, Wartość PLN, Status.
 
 Przy pierwszym wejściu na zakładkę, gdy są pozycje, program pobiera kursy. **Odśwież teraz** pobiera je ponownie. Puste portfolio i ten przycisk ustawiają status „Brak pozycji — dodaj coiny.”
 
-Zapytanie o kursy zawiera identyfikatory coinów (`ids`) oraz waluty `usd,pln`. Wartość PLN wiersza to ilość razy kurs PLN. Do sumy pod tabelą wchodzą tylko wiersze ze statusem OK. Napis ma postać „Pozycje: … | Suma: … PLN”.
+Zapytanie o kursy zawiera identyfikatory coinów (`ids`) oraz waluty `usd,pln`. Wartość USD wiersza to ilość razy kurs USD. Wartość PLN wiersza to ilość razy kurs PLN. Do sumy pod tabelą wchodzą tylko wiersze ze statusem OK. Napis ma postać „Pozycje: … | Suma: … USD | … PLN”.
 
 Status wiersza:
 

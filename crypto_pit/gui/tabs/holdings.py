@@ -32,15 +32,6 @@ def _fmt_amount(v: float) -> str:
     return s if s else "0"
 
 
-def _fmt_rate(v: float | None) -> str:
-    if v is None:
-        return "—"
-    if v >= 1000:
-        return fmt_money(v)
-    s = f"{v:.8f}".rstrip("0").rstrip(".")
-    return s if s else "0"
-
-
 class HoldingsTab:
     def __init__(self, parent: ttk.Frame, app: CryptoPitApp) -> None:
         self.app = app
@@ -76,20 +67,18 @@ class HoldingsTab:
         tree_wrap.grid(row=1, column=0, sticky="nsew")
         setup_columns(
             self.tree,
-            ("symbol", "location", "amount", "usd", "pln", "value_pln", "status"),
+            ("symbol", "location", "amount", "value_usd", "value_pln", "status"),
             {
                 "symbol": "Waluta",
                 "location": "Lokalizacja",
                 "amount": "Ilość",
-                "usd": "Kurs USD",
-                "pln": "Kurs PLN",
+                "value_usd": "Wartość USD",
                 "value_pln": "Wartość PLN",
                 "status": "Status",
             },
             anchors={
                 "amount": tk.E,
-                "usd": tk.E,
-                "pln": tk.E,
+                "value_usd": tk.E,
                 "value_pln": tk.E,
                 "status": tk.E,
             },
@@ -125,6 +114,8 @@ class HoldingsTab:
         self.status_var.set("Pobieranie kursów…")
         self._render(holdings)
         rates = self.app.crypto_rates
+        for holding in holdings:
+            rates.remember_symbol(holding.symbol, holding.coin_id)
         ids = list(dict.fromkeys(h.coin_id for h in holdings))
 
         def worker() -> None:
@@ -145,11 +136,12 @@ class HoldingsTab:
 
     def _render(self, holdings: list[Holding]) -> None:
         self.tree.delete(*self.tree.get_children())
+        total_usd = 0.0
         total_pln = 0.0
 
         for i, h in enumerate(holdings):
             price = self.app.crypto_rates.get_cached_price(h.coin_id)
-            usd_s = pln_s = value_s = "—"
+            value_usd_s = value_pln_s = "—"
             if price is None:
                 status = (
                     "Pobieranie…"
@@ -159,15 +151,18 @@ class HoldingsTab:
                     )
                 )
             elif not price.ok:
-                usd_s = _fmt_rate(price.usd)
-                pln_s = _fmt_rate(price.pln)
                 status = price.error or "Błąd kursu"
+                if price.usd is not None:
+                    value_usd_s = fmt_money(h.amount * price.usd)
+                if price.pln is not None:
+                    value_pln_s = fmt_money(h.amount * price.pln)
             else:
-                usd_s = _fmt_rate(price.usd)
-                pln_s = _fmt_rate(price.pln)
-                value = h.amount * (price.pln or 0)
-                total_pln += value
-                value_s = fmt_money(value)
+                value_usd = h.amount * (price.usd or 0)
+                value_pln = h.amount * (price.pln or 0)
+                total_usd += value_usd
+                total_pln += value_pln
+                value_usd_s = fmt_money(value_usd)
+                value_pln_s = fmt_money(value_pln)
                 status = "OK"
 
             insert_row(
@@ -176,9 +171,8 @@ class HoldingsTab:
                     h.symbol.upper(),
                     h.location,
                     _fmt_amount(h.amount),
-                    usd_s,
-                    pln_s,
-                    value_s,
+                    value_usd_s,
+                    value_pln_s,
                     status,
                 ),
                 iid=str(h.id),
@@ -186,7 +180,11 @@ class HoldingsTab:
             )
 
         self.sum_label.config(
-            text=(f"Pozycje: {len(holdings)}    |    Suma: {fmt_money(total_pln)} PLN")
+            text=(
+                f"Pozycje: {len(holdings)}    |    "
+                f"Suma: {fmt_money(total_usd)} USD    |    "
+                f"{fmt_money(total_pln)} PLN"
+            )
         )
         autosize_columns(self.tree)
 

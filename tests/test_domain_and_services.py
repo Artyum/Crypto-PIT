@@ -26,6 +26,7 @@ from crypto_pit.gui.formatters import (
     fmt_money,
     fmt_money_compact,
     fmt_qty,
+    fmt_rate,
     parse_float,
 )
 from crypto_pit.infrastructure.database import (
@@ -598,6 +599,42 @@ def test_nbp_and_crypto_rates(monkeypatch: pytest.MonkeyPatch) -> None:
     assert _as_float("1.5") == 1.5
     assert _as_float(object()) is None
     assert CryptoPrice("x", None, 1).ok is False
+
+
+def test_resolve_crypto_symbols(monkeypatch: pytest.MonkeyPatch) -> None:
+    def search_get(url: str, params: dict | None = None, timeout: int = 0) -> _Response:
+        query = str((params or {}).get("query") or "").upper()
+        if query == "ETH":
+            return _Response(
+                200,
+                {
+                    "coins": [
+                        {"id": "ethereum", "symbol": "eth", "name": "Ethereum"},
+                    ]
+                },
+            )
+        if query == "FOO":
+            return _Response(
+                200,
+                {"coins": [{"id": "foo-token", "symbol": "zzz", "name": "Foo"}]},
+            )
+        if query == "FAIL":
+            return _Response(503)
+        return _Response(200, {"coins": []})
+
+    monkeypatch.setattr("crypto_pit.services.crypto_rates.requests.get", search_get)
+    service = CryptoRatesService()
+    service.remember_symbol("btc", "bitcoin")
+    mapping = service.resolve_symbols(["BTC", "eth", "foo", "zzz", "fail", "  "])
+    assert mapping["BTC"] == "bitcoin"
+    assert mapping["ETH"] == "ethereum"
+    assert mapping["FOO"] == "foo-token"
+    assert "ZZZ" not in mapping
+    assert "FAIL" not in mapping
+    assert service.get_cached_price_for_symbol("btc") is None
+    assert fmt_rate(None) == "—"
+    assert fmt_rate(1500) == fmt_money(1500)
+    assert fmt_rate(0.00123000) == "0.00123"
 
 
 def test_query_dca_remaining_messages() -> None:

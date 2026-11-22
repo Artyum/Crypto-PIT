@@ -127,6 +127,8 @@ class CryptoPitApp(tk.Tk):
             return
         if str(self.tab_holdings.frame) == current:
             self.tab_holdings.on_show()
+        elif str(self.tab_dca.frame) == current:
+            self.tab_dca.on_show()
         elif str(self.tab_pit.frame) == current:
             self.tab_pit.on_show()
 

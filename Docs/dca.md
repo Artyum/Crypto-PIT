@@ -11,6 +11,7 @@ Dla każdego waloru w wybranym zakresie dat:
 - **Zakupy** — liczba transakcji kupna,
 - **Suma PLN** — suma wartości w PLN (`value_pln`),
 - **Ilość** — suma pola finalnej ilości (`final_coin`),
+- **Kurs USD** i **Kurs PLN** — bieżący kurs waloru (CoinGecko). Przy pierwszym wejściu na zakładkę program pobiera kursy dla walorów z tabeli. Jeśli ten sam symbol jest w [portfelu](portfel.md), używany jest jego identyfikator coina.
 - **DCA PLN** — suma PLN podzielona przez ilość.
 
 Kliknięcie wiersza pokazuje pod spodem poszczególne zakupy: datę, ilość, wartość w PLN i cenę jednostkową w PLN (wartość podzielona przez finalną ilość).

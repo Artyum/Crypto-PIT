@@ -2,7 +2,7 @@
 
 [Spis dokumentacji](README.md)
 
-Zakładka **Portfel** to lista pozycji zapisanych osobno od transakcji. Pozycja ma symbol, identyfikator coina, lokalizację i ilość. Wycena w oknie jest liczona z kursu pobranego dla tej pozycji. Te pozycje nie wchodzą do [rozliczenia lat](rozliczenie-lat.md) ani do [pól PIT-38](pit-38.md).
+Zakładka **Portfel** to lista pozycji zapisanych osobno od transakcji. Pozycja ma symbol, identyfikator coina, lokalizację i ilość. Wycena w oknie jest liczona z kursu pobranego dla tej pozycji.
 
 ## Pozycje
 

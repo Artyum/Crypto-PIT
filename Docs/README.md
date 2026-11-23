@@ -6,7 +6,7 @@ Dane są w lokalnym pliku SQLite. Połączenia wychodzące, które program wykon
 
 ## Zastrzeżenie
 
-Program liczy kwoty według reguł opisanych w tej dokumentacji. To narzędzie pomocnicze, nie poradnictwo podatkowe.
+Program liczy kwoty według reguł opisanych w tej dokumentacji. Przed złożeniem zeznania zweryfikuj wyniki samodzielnie albo z księgowym.
 
 ## Spis treści
 

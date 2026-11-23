@@ -2,11 +2,11 @@
 
 Aplikacja desktopowa do ewidencji transakcji kryptowalut i przygotowania kwot do **PIT-38** (część E — przychody z kapitałów pieniężnych, w tym z odpłatnego zbycia walut wirtualnych).
 
-Dane trzymane są lokalnie w SQLite. Program nie wysyła Twojej historii transakcji nigdzie poza dwoma opcjonalnymi zapytaniami: kurs waluty z API NBP oraz wycena portfela z CoinGecko.
+Dane trzymane są lokalnie w SQLite. Program sam odpytuje API NBP o kurs waluty oraz CoinGecko o wycenę portfela i wyszukiwanie coinów.
 
 ## Zastrzeżenie
 
-To narzędzie pomocnicze, **nie poradnictwo podatkowe**. Numeracja pól PIT-38, zaokrąglenia i sposób ujęcia kosztów mogą się zmieniać wraz z formularzem i interpretacjami. Przed złożeniem zeznania zweryfikuj wyniki samodzielnie albo z księgowym. Autorzy nie ponoszą odpowiedzialności za decyzje podatkowe podjęte na podstawie tego programu.
+Program wylicza kwoty według reguł z tej dokumentacji. Numeracja pól PIT-38, zaokrąglenia i sposób ujęcia kosztów mogą się zmieniać wraz z formularzem i interpretacjami. Przed złożeniem zeznania zweryfikuj wyniki samodzielnie albo z księgowym.
 
 ## Co robi program
 
@@ -46,7 +46,7 @@ W katalogu projektu:
 .\start_app.ps1
 ```
 
-Skrypt utworzy `.venv`, zainstaluje `requirements.txt` i uruchomi GUI przez `pythonw` (bez okna konsoli).
+Skrypt utworzy `.venv`, zainstaluje `requirements.txt` i uruchomi GUI przez `pythonw`.
 
 Ręcznie:
 
@@ -74,10 +74,10 @@ Na Linuxie zainstaluj pakiet Tkinter systemu, jeśli `import tkinter` kończy si
 | Tryb | Polecenie |
 | --- | --- |
 | GUI | `python -m crypto_pit` |
-| Tylko podsumowanie lat w terminalu | `python -m crypto_pit --cli` |
+| Podsumowanie lat w terminalu | `python -m crypto_pit --cli` |
 | Inna baza SQLite | `python -m crypto_pit --db sciezka/do/pliku.db` |
 
-Domyślna baza: istniejący plik `data/crypto_pit.db`, a gdy go nie ma — katalog danych użytkownika (`%LOCALAPPDATA%\Crypto-PIT\crypto_pit.db` w Windows). Katalog `data/` jest w `.gitignore` i **nie trafia** na GitHub.
+Domyślna baza: istniejący plik `data/crypto_pit.db`, a gdy go nie ma — katalog danych użytkownika (`%LOCALAPPDATA%\Crypto-PIT\crypto_pit.db` w Windows). Katalog `data/` jest w `.gitignore`.
 
 ## Jak liczone jest PIT
 
@@ -87,7 +87,7 @@ Dla każdej transakcji:
 
 - **Kupno** — kosztem podatkowym jest wartość bezwzględna pola `value_pln` (w oknie kupna podpowiedź mówi o pełnej kwocie obciążenia konta, z prowizją w walucie).
 - **Sprzedaż** — przychodem jest wartość sprzedaży w PLN; kosztem roku jest prowizja sprzedaży w PLN.
-- **Inne** — nie wchodzi do przychodu ani kosztów PIT.
+- **Inne** — przychód i koszt roku wynoszą 0.
 
 Rozliczenie idzie chronologicznie po latach kalendarzowych:
 
@@ -95,10 +95,10 @@ Rozliczenie idzie chronologicznie po latach kalendarzowych:
 2. Koszty bieżące = koszty kupna + prowizje sprzedaży w tym roku.
 3. Do kosztów doliczane są koszty nierozliczone z lat poprzednich.
 4. Jeśli koszty > przychód: dochód = 0, nadwyżka przechodzi na następny rok.
-5. W przeciwnym razie: dochód = przychód − koszty, nic nie przechodzi dalej.
-6. Podatek 19% jest **orientacyjny** (poza częścią E formularza).
+5. W przeciwnym razie: dochód = przychód − koszty, koszty do przeniesienia = 0.
+6. Podatek 19% jest **orientacyjny** (wzór w programie: „poza częścią E — orientacyjnie”).
 
-Program sumuje wartości w roku i nie paruje każdej sprzedaży z konkretnym zakupem.
+Program sumuje wartości w roku.
 
 ### Profile giełd (autokalkulacja)
 
@@ -108,15 +108,14 @@ Użytkownik podaje m.in. giełdę, typ, datę, walor, walutę i wartość. Reszt
 | --- | --- | --- |
 | Binance, Coinbase, Kraken, OKX | prowizja w walucie + finalna ilość | ilość + prowizja w walucie |
 | Zonda | ilość + prowizja w walorze | ilość + prowizja w walucie |
-| Kanga | finalna ilość + prowizja w walorze | — (brak profilu sprzedaży) |
+| Kanga | finalna ilość + prowizja w walorze | zapis pokazuje „Brak profilu kalkulacji dla Kanga / Sprzedaż” |
 
 `value_pln = value × kurs NBP` (dla PLN kurs = 1).
 
 ## Prywatność i dane
 
-- Baza i backupy zawierają Twoją historię — **nie commituj** plików `.db`, katalogu `data/` ani ZIP-ów z backupem.
-- Kursy: NBP (`api.nbp.pl`) i CoinGecko (`api.coingecko.com`) — bez klucza API.
-- Aplikacja nie ma kont, chmury ani telemetrii.
+- Baza i backupy zawierają historię transakcji i pozycje portfela. Pliki `.db`, katalog `data/` i ZIP-y z backupem zostają poza repozytorium.
+- Kursy: NBP (`api.nbp.pl`) i CoinGecko (`api.coingecko.com`). Zapytania idą bez klucza API.
 
 ## Struktura repozytorium
 
@@ -165,7 +164,7 @@ Pojedynczy plik testów: `.\run_tests.ps1 tests\test_tax_calculation.py`.
 
 ## Publikacja na GitHub
 
-Repozytorium jest gotowe do publicznego zdalnego originu. Nie wypychaj:
+Repozytorium jest gotowe do publicznego zdalnego originu. Poza repozytorium zostają:
 
 - `data/`, `*.db`, backupów ZIP
 - `report/`, `.venv`, `.coverage`

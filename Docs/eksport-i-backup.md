@@ -30,7 +30,7 @@ Starszy backup bez kolumn daty i tabeli NBP wczytuje się tak samo. Pliki mogą 
 
 Po zapisie program podaje, ile rekordów trafiło do pliku.
 
-**Import backupu…** czyta ZIP, a potem zastępuje transakcje i portfel w bieżącej bazie. Przed zapisem jest pytanie z liczbą rekordów w pliku i w obecnej bazie. Anulowanie nic nie zmienia. Po udanym imporcie listy są odświeżane, a komunikat brzmi „Przywrócono … transakcji i … pozycji portfela.”
+**Import backupu…** czyta ZIP, a potem zastępuje transakcje i portfel w bieżącej bazie. Przed zapisem jest pytanie z liczbą rekordów w pliku i w obecnej bazie. Anulowanie zamyka pytanie i zostawia bieżącą bazę. Po udanym imporcie listy są odświeżane, a komunikat brzmi „Przywrócono … transakcji i … pozycji portfela.”
 
 Plik, który nie jest ZIP-em, kończy się komunikatem „Backup musi być plikiem ZIP (transakcje + portfel).” Archiwum bez `transactions.csv` albo bez `holdings.csv` kończy się komunikatem, że archiwum musi zawierać oba pliki. Gdy zapis do bazy zgłosi błąd, zmiana jest wycofywana i dotychczasowe transakcje oraz portfel zostają.
 
@@ -40,7 +40,7 @@ W imporcie pusta lokalizacja pozycji dostaje tekst „Nieokreślone”. Powtórz
 
 W bazie SQLite oraz w ZIP są transakcje i pozycje portfela.
 
-`.gitignore` wyklucza katalog `data/`, pliki `*.db`, katalog `report/` i `.venv`. Okno zapisu CSV i ZIP pozwala wybrać dowolną ścieżkę. Pliki `*.csv` i `*.zip` nie są wpisane w `.gitignore`.
+`.gitignore` wyklucza katalog `data/`, pliki `*.db`, katalog `report/` i `.venv`. Okno zapisu CSV i ZIP pozwala wybrać dowolną ścieżkę.
 
 Program sam wysyła zapytania HTTP bez klucza API:
 

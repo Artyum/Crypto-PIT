@@ -2,7 +2,7 @@
 
 [Spis dokumentacji](README.md)
 
-Zakładka **DCA** pokazuje średni koszt zakupu wyliczony z transakcji typu **Kupno**. Wynik jest tylko na tej zakładce: program nie zapisuje go w rozliczeniu lat.
+Zakładka **DCA** pokazuje średni koszt zakupu wyliczony z transakcji typu **Kupno**. Wynik jest wyświetlany na tej zakładce.
 
 ## Jak czytać wynik
 
@@ -22,7 +22,7 @@ Kliknięcie wiersza pokazuje pod spodem poszczególne zakupy: datę, ilość, wa
 - **Data od** i **Data do** — dzień w formacie `RRRR-MM-DD`. Przycisk **Wybierz…** otwiera okno „Wybór daty i godziny”; do pola zapisywany jest sam dzień. Dzień końcowy jest wliczany.
 - Gdy data od jest późniejsza niż data do, lista zostaje pusta i na dole pojawia się komunikat.
 
-Do średniej wchodzi kupno, które ma symbol waloru, dodatnią wartość w PLN i dodatnią finalną ilość. Sprzedaż, typ Inne oraz kupna bez tych kwot nie wchodzą do wierszy.
+Do średniej wchodzi kupno, które ma symbol waloru, dodatnią wartość w PLN i dodatnią finalną ilość.
 
 Średnia używa wartości zapisanych przy transakcjach (`value_pln` i `final_coin`).
 

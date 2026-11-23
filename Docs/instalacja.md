@@ -27,7 +27,7 @@ Skrypt:
 
 1. tworzy lokalne środowisko `.venv`, jeśli go jeszcze nie ma (`py -3`, a w razie braku `python`);
 2. instaluje pakiety z `requirements.txt`;
-3. uruchamia okno programu przez `pythonw`, bez zostawiania konsoli.
+3. uruchamia okno programu przez `pythonw`.
 
 Dodatkowe argumenty są przekazywane do programu, na przykład inna baza:
 
@@ -56,7 +56,7 @@ pip install -r requirements-dev.txt
 python -m crypto_pit
 ```
 
-Gdy `import tkinter` kończy się błędem, w tej instalacji Pythona nie ma Tkintera. Na Debianie i Ubuntu pakiet nazywa się `python3-tk`.
+Gdy `import tkinter` kończy się błędem, doinstaluj Tkintera. Na Debianie i Ubuntu pakiet nazywa się `python3-tk`.
 
 ## Sposoby uruchomienia
 
@@ -65,7 +65,7 @@ Polecenia zakładają aktywne środowisko albo interpreter z `.venv`.
 | Tryb | Polecenie | Efekt |
 | --- | --- | --- |
 | Okno programu | `python -m crypto_pit` | Zakładki: Transakcje, DCA, Portfel, Rozliczenie lat, Pola PIT-38 |
-| Podsumowanie w terminalu | `python -m crypto_pit --cli` | Wypisuje rozliczenie każdego roku, bez GUI |
+| Podsumowanie w terminalu | `python -m crypto_pit --cli` | Wypisuje rozliczenie każdego roku w terminalu |
 | Inna baza | `python -m crypto_pit --db sciezka/do/pliku.db` | Zapis w podanym pliku SQLite |
 | Cienki launcher | `python crypto-pit.py` | To samo co `python -m crypto_pit` |
 
@@ -79,7 +79,7 @@ Przełączniki `--cli` i `--db` można podać razem:
 
 Jeśli w projekcie istnieje `data/crypto_pit.db`, program nadal używa tego pliku. W przeciwnym razie tworzy bazę w katalogu danych użytkownika: `%LOCALAPPDATA%\Crypto-PIT\crypto_pit.db` w Windows. Katalog `data/` i pliki `*.db` są w `.gitignore`. Import kopii zapasowej wymaga poprawnych wartości i odrzuca uszkodzone wiersze przed zmianą bazy.
 
-Nowa baza nie zawiera transakcji ani pozycji portfela. Wpisy dodaje się w oknie programu albo wczytuje z [backupu ZIP](eksport-i-backup.md).
+Nowa baza jest pusta. Wpisy dodaje się w oknie programu albo wczytuje z [backupu ZIP](eksport-i-backup.md).
 
 Gdy `start_app.ps1` nie znajdzie Pythona, pokazuje okno: „Nie znaleziono Pythona. Zainstaluj Python 3 lub upewnij sie, ze 'py' / 'python' jest w PATH.”
 

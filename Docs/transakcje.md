@@ -12,7 +12,7 @@ Kolumny: Lp., Giełda, Data, Typ, Walor, Ilość, Waluta, Wartość, Cena, Kurs,
 
 Pod tabelą jest tekst w postaci „Widoczne: … | suma przychodów: … PLN | suma kosztów: … PLN”. Sumy przychodu i kosztu widocznych wierszy są zaokrąglone do 2 miejsc po przecinku.
 
-Usunięcie niezatwierdzonej transakcji pyta: „Usunąć transakcję Lp. …?”. Transakcja z zaznaczonym **Zatwierdzone** nie jest usuwana. Program pokazuje: „Transakcja jest zatwierdzona. Odznacz „Zatwierdzone” w edycji, aby ją usunąć.”
+Usunięcie transakcji pyta: „Usunąć transakcję Lp. …?”. Przy zaznaczonym **Zatwierdzone** program pokazuje: „Transakcja jest zatwierdzona. Odznacz „Zatwierdzone” w edycji, aby ją usunąć.” i zostawia wpis na liście.
 
 ## Nowa transakcja
 
@@ -50,7 +50,7 @@ Widoczne pola zależą od giełdy i typu. Nazwy w oknie:
 | --- | --- | --- |
 | Binance, Coinbase, Kraken, OKX | Finalna ilość waloru, Prowizja (waluta) | Ilość waloru, Prowizja (waluta) |
 | Zonda | Ilość waloru, Prowizja (walor) | Ilość waloru, Prowizja (waluta) |
-| Kanga | Finalna ilość waloru, Prowizja (walor) | brak profilu: pola są ukryte |
+| Kanga | Finalna ilość waloru, Prowizja (walor) | pola profilu ukryte; zapis pokazuje „Brak profilu kalkulacji dla Kanga / Sprzedaż” |
 
 Dla Kangi i sprzedaży zapis pokazuje: „Brak profilu kalkulacji dla Kanga / Sprzedaż”.
 
@@ -60,11 +60,11 @@ Sekcja **Wyniki (automatycznie)** pokazuje: Cena, Cena PLN, Wartość, Wartość
 
 **Opis / uwagi** jest zapisywane przy transakcji i trafia do kolumny „Uwagi” w [eksporcie](eksport-i-backup.md).
 
-**Zatwierdzone** blokuje pola okna (giełdę, typ, datę, walor, walutę, kurs, wartość, pola profilu i uwagi). Odznaczenie z powrotem je odblokowuje. To pole nie zmienia przychodu ani kosztu użytego w rozliczeniu. Zatwierdzonej transakcji nie da się usunąć z listy, dopóki w edycji nie odznaczysz tego pola.
+**Zatwierdzone** blokuje pola okna (giełdę, typ, datę, walor, walutę, kurs, wartość, pola profilu i uwagi). Odznaczenie z powrotem je odblokowuje. Usunięcie z listy działa po odznaczeniu tego pola w edycji.
 
 ## Kwoty używane w rozliczeniu
 
-Rozliczenie sumuje kwoty z transakcji w roku. Nie łączy pojedynczej sprzedaży z pojedynczym kupnem.
+Rozliczenie sumuje kwoty z transakcji w roku.
 
 | Typ | Przychód | Koszt roku |
 | --- | --- | --- |
@@ -72,7 +72,7 @@ Rozliczenie sumuje kwoty z transakcji w roku. Nie łączy pojedynczej sprzedaży
 | Sprzedaż | wartość bezwzględna wartości w PLN | wartość bezwzględna prowizji w PLN |
 | Inne | 0 | 0 |
 
-Typ **Inne** nie występuje na liście typów w oknie dodawania. Jest w filtrze listy. Do bazy trafia z [importu backupu](eksport-i-backup.md), gdy kolumna Typ jest pusta, ma wartość `inne` / `other`, albo inną wartość spoza kupna i sprzedaży.
+Typ **Inne** jest w filtrze listy. Do bazy trafia z [importu backupu](eksport-i-backup.md), gdy kolumna Typ jest pusta, ma wartość `inne` / `other`, albo inną wartość spoza kupna i sprzedaży. W oknie dodawania typ to Kupno albo Sprzedaż.
 
 Szczegóły przenoszenia kosztów między latami są w [rozliczeniu lat](rozliczenie-lat.md).
 

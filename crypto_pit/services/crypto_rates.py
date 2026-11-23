@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
+from decimal import Decimal
 
 import requests
+
+from crypto_pit.domain.money import DecimalError, parse_decimal
+from crypto_pit.services.http_json import read_json, request_response
 
 COINGECKO_BASE = "https://api.coingecko.com/api/v3"
 REQUEST_TIMEOUT_S = 20
@@ -25,8 +30,8 @@ class CoinInfo:
 @dataclass(frozen=True)
 class CryptoPrice:
     coin_id: str
-    usd: float | None
-    pln: float | None
+    usd: Decimal | None
+    pln: Decimal | None
     error: str | None = None
 
     @property
@@ -36,23 +41,27 @@ class CryptoPrice:
 
 class CryptoRatesService:
     def __init__(self) -> None:
+        self._lock = threading.Lock()
         self._prices: dict[str, CryptoPrice] = {}
         self._symbol_ids: dict[str, str] = {}
 
     def get_cached_price(self, coin_id: str) -> CryptoPrice | None:
-        return self._prices.get(coin_id)
+        with self._lock:
+            return self._prices.get(coin_id)
 
     def remember_symbol(self, symbol: str, coin_id: str) -> None:
         key = symbol.strip().upper()
         cid = coin_id.strip()
         if key and cid:
-            self._symbol_ids[key] = cid
+            with self._lock:
+                self._symbol_ids[key] = cid
 
     def get_cached_price_for_symbol(self, symbol: str) -> CryptoPrice | None:
-        cid = self._symbol_ids.get(symbol.strip().upper())
-        if not cid:
-            return None
-        return self.get_cached_price(cid)
+        with self._lock:
+            cid = self._symbol_ids.get(symbol.strip().upper())
+            if not cid:
+                return None
+            return self._prices.get(cid)
 
     def resolve_symbols(self, symbols: list[str]) -> dict[str, str]:
         mapping: dict[str, str] = {}
@@ -60,7 +69,8 @@ class CryptoRatesService:
             key = raw.strip().upper()
             if not key:
                 continue
-            cached = self._symbol_ids.get(key)
+            with self._lock:
+                cached = self._symbol_ids.get(key)
             if cached:
                 mapping[key] = cached
                 continue
@@ -68,20 +78,21 @@ class CryptoRatesService:
                 found = self.search_coins(key, limit=10)
             except CryptoRateFetchError:
                 continue
-            chosen = next((c for c in found if c.symbol.upper() == key), None)
+            chosen = next((coin for coin in found if coin.symbol.upper() == key), None)
             if chosen is None and found:
                 chosen = found[0]
             if chosen is None:
                 continue
-            self._symbol_ids[key] = chosen.id
+            with self._lock:
+                self._symbol_ids[key] = chosen.id
             mapping[key] = chosen.id
         return mapping
 
     def search_coins(self, query: str, *, limit: int = 40) -> list[CoinInfo]:
-        q = (query or "").strip()
-        if not q:
+        text = (query or "").strip()
+        if not text:
             return []
-        payload = _get_json(f"{COINGECKO_BASE}/search", {"query": q})
+        payload = _get_json(f"{COINGECKO_BASE}/search", {"query": text})
         coins_raw = payload.get("coins") if isinstance(payload, dict) else None
         if not isinstance(coins_raw, list):
             raise CryptoRateFetchError("Niepoprawna odpowiedź CoinGecko (szukaj)")
@@ -108,19 +119,23 @@ class CryptoRatesService:
         *,
         force_refresh: bool = False,
     ) -> dict[str, CryptoPrice]:
-        unique = list(dict.fromkeys(c.strip() for c in coin_ids if c and c.strip()))
+        unique = list(
+            dict.fromkeys(item.strip() for item in coin_ids if item and item.strip())
+        )
         if not unique:
             return {}
-
-        to_fetch = [
-            cid
-            for cid in unique
-            if force_refresh or cid not in self._prices or not self._prices[cid].ok
-        ]
+        with self._lock:
+            to_fetch = [
+                cid
+                for cid in unique
+                if force_refresh or cid not in self._prices or not self._prices[cid].ok
+            ]
         if to_fetch:
-            self._prices.update(self._fetch_prices(to_fetch))
-
-        return {cid: self._prices[cid] for cid in unique if cid in self._prices}
+            fetched = self._fetch_prices(to_fetch)
+            with self._lock:
+                self._prices.update(fetched)
+        with self._lock:
+            return {cid: self._prices[cid] for cid in unique if cid in self._prices}
 
     def _fetch_prices(self, coin_ids: list[str]) -> dict[str, CryptoPrice]:
         try:
@@ -150,8 +165,8 @@ class CryptoRatesService:
                     coin_id=cid, usd=None, pln=None, error="Nieznany coin / brak w API"
                 )
                 continue
-            usd = _as_float(row.get("usd"))
-            pln = _as_float(row.get("pln"))
+            usd = _as_decimal(row.get("usd"))
+            pln = _as_decimal(row.get("pln"))
             if usd is None or pln is None:
                 result[cid] = CryptoPrice(
                     coin_id=cid, usd=usd, pln=pln, error="Brak kursu USD lub PLN"
@@ -163,23 +178,23 @@ class CryptoRatesService:
 
 def _get_json(url: str, params: dict[str, str]) -> object:
     try:
-        resp = requests.get(url, params=params, timeout=REQUEST_TIMEOUT_S)
+        response = request_response(url, params=params, timeout=REQUEST_TIMEOUT_S)
     except requests.RequestException as exc:
         raise CryptoRateFetchError(f"Błąd połączenia z CoinGecko: {exc}") from exc
-    if resp.status_code == 429:
+    if response.status_code == 429:
         raise CryptoRateFetchError("Limit zapytań CoinGecko (429) — spróbuj za chwilę")
-    if resp.status_code != 200:
-        raise CryptoRateFetchError(f"CoinGecko zwróciło status {resp.status_code}")
+    if response.status_code != 200:
+        raise CryptoRateFetchError(f"CoinGecko zwróciło status {response.status_code}")
     try:
-        return resp.json()
+        return read_json(response)
     except ValueError as exc:
         raise CryptoRateFetchError(f"Niepoprawna odpowiedź CoinGecko: {exc}") from exc
 
 
-def _as_float(value: object) -> float | None:
-    if value is None:
+def _as_decimal(value: object) -> Decimal | None:
+    if value is None or isinstance(value, bool):
         return None
     try:
-        return float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
+        return parse_decimal(str(value) if not isinstance(value, str) else value)
+    except DecimalError:
         return None

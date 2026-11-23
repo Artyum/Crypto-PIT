@@ -60,7 +60,7 @@ class PitTab:
         self.field_no_labels: dict[str, tk.Label] = {}
         self.field_desc_labels: dict[str, tk.Label] = {}
         self.labels: dict[str, tk.Label] = {}
-        self._values: dict[str, float | None] = dict.fromkeys(PIT38_FIELD_KEYS)
+        self._values: dict[str, int | None] = dict.fromkeys(PIT38_FIELD_KEYS)
         for i, key in enumerate(PIT38_FIELD_KEYS):
             self._add_field_row(i, key)
 

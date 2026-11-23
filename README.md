@@ -52,7 +52,7 @@ Ręcznie:
 
 ```powershell
 py -3 -m venv .venv
-.\.venv\Scripts\pip install -r requirements.txt
+.\.venv\Scripts\pip install -r requirements-dev.txt
 .\.venv\Scripts\python -m crypto_pit
 ```
 
@@ -63,7 +63,7 @@ Albo: `python crypto-pit.py`.
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 python -m crypto_pit
 ```
 
@@ -77,7 +77,7 @@ Na Linuxie zainstaluj pakiet Tkinter systemu, jeśli `import tkinter` kończy si
 | Tylko podsumowanie lat w terminalu | `python -m crypto_pit --cli` |
 | Inna baza SQLite | `python -m crypto_pit --db sciezka/do/pliku.db` |
 
-Domyślna baza: `data/crypto_pit.db` (katalog `data/` jest w `.gitignore` i **nie trafia** na GitHub).
+Domyślna baza: istniejący plik `data/crypto_pit.db`, a gdy go nie ma — katalog danych użytkownika (`%LOCALAPPDATA%\Crypto-PIT\crypto_pit.db` w Windows). Katalog `data/` jest w `.gitignore` i **nie trafia** na GitHub.
 
 ## Jak liczone jest PIT
 
@@ -158,8 +158,8 @@ chmod +x run_audit.sh
 ```
 
 - **Testy** — rozliczenie PIT, profile giełd, pola PIT-38, backup, migracja schematu; log w `report/tests.log`.
-- **Lint** — Ruff (format + check) i basedpyright; log w `report/lint_check.log`.
-- **Audit** — aktualizuje `pip`, potem `pip-audit` na `requirements.txt` i na pakietach w `.venv`; log w `report/audit.log`. Katalog `report/` jest ignorowany przez git.
+- **Lint** — `run_lint_check.ps1` formatuje kod, uruchamia `ruff check --fix` i basedpyright; log w `report/lint_check.log`.
+- **Audit** — `pip-audit` na przypiętych plikach `requirements.txt` i `requirements-dev.txt`; log w `report/audit.log`. Katalog `report/` jest ignorowany przez git.
 
 Pojedynczy plik testów: `.\run_tests.ps1 tests\test_tax_calculation.py`.
 

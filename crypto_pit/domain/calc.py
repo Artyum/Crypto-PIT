@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import TypedDict
 
 from crypto_pit.domain.enums import TxType
 from crypto_pit.domain.exchange_profiles import get_profile
+from crypto_pit.domain.money import DecimalError, parse_decimal, quantize
 
 
 class ValidationError(ValueError):
@@ -11,44 +13,57 @@ class ValidationError(ValueError):
 
 
 class CalcResult(TypedDict):
-    value: float
-    fee: float
-    fee_coin: float
-    coin_amount: float
-    final_coin: float
-    price: float
-    price_pln: float
-    fee_pln: float
-    value_pln: float
-    curr_to_pln: float
+    value: Decimal
+    fee: Decimal
+    fee_coin: Decimal
+    coin_amount: Decimal
+    final_coin: Decimal
+    price: Decimal
+    price_pln: Decimal
+    fee_pln: Decimal
+    value_pln: Decimal
+    curr_to_pln: Decimal
 
 
-def _to_result(fields: dict[str, float], curr_to_pln: float) -> CalcResult:
-    if fields["value"] <= 0:
+def _finite(value: Decimal, label: str) -> Decimal:
+    try:
+        return parse_decimal(value)
+    except DecimalError as exc:
+        raise ValidationError(f"{label}: {exc}") from exc
+
+
+def _to_result(fields: dict[str, Decimal], curr_to_pln: Decimal) -> CalcResult:
+    value = _finite(fields["value"], "Wartość")
+    fee = _finite(fields["fee"], "Prowizja")
+    fee_coin = _finite(fields["fee_coin"], "Prowizja w walorze")
+    coin_amount = _finite(fields["coin_amount"], "Ilość waloru")
+    final_coin = _finite(fields["final_coin"], "Finalna ilość")
+    price = _finite(fields["price"], "Cena")
+    rate = _finite(curr_to_pln, "Kurs")
+    if value <= 0:
         raise ValidationError("Wartość musi być większa od zera")
-    if fields["fee"] < 0:
+    if fee < 0:
         raise ValidationError("Prowizja nie może być ujemna")
-    if fields["coin_amount"] <= 0:
+    if coin_amount <= 0:
         raise ValidationError("Ilość waloru musi być większa od zera")
-    if curr_to_pln <= 0:
+    if rate <= 0:
         raise ValidationError("Kurs waluta/PLN musi być większe od zera")
-    if fields["price"] <= 0:
+    if price <= 0:
         raise ValidationError("Cena musi być większa od zera")
-    if fields["fee_coin"] < 0:
-        raise ValidationError("Prowizja w walorze nie może być ujemne")
-    if fields["final_coin"] <= 0:
+    if fee_coin < 0:
+        raise ValidationError("Prowizja w walorze nie może być ujemna")
+    if final_coin <= 0:
         raise ValidationError("Finalna ilość waloru musi być większa od zera")
-    rate = curr_to_pln
     return CalcResult(
-        value=fields["value"],
-        fee=fields["fee"],
-        fee_coin=fields["fee_coin"],
-        coin_amount=fields["coin_amount"],
-        final_coin=fields["final_coin"],
-        price=fields["price"],
-        price_pln=round(fields["price"] * rate, 2),
-        fee_pln=round(fields["fee"] * rate, 2),
-        value_pln=round(fields["value"] * rate, 2),
+        value=value,
+        fee=fee,
+        fee_coin=fee_coin,
+        coin_amount=coin_amount,
+        final_coin=final_coin,
+        price=price,
+        price_pln=quantize(price * rate, 2),
+        fee_pln=quantize(fee * rate, 2),
+        value_pln=quantize(value * rate, 2),
         curr_to_pln=rate,
     )
 
@@ -57,14 +72,13 @@ def resolve_trade(
     *,
     exchange: str,
     tx_type: TxType,
-    curr_to_pln: float,
-    value: float | None = None,
-    fee: float | None = None,
-    fee_coin: float | None = None,
-    coin_amount: float | None = None,
-    final_coin: float | None = None,
+    curr_to_pln: Decimal | int | str,
+    value: Decimal | int | str | None = None,
+    fee: Decimal | int | str | None = None,
+    fee_coin: Decimal | int | str | None = None,
+    coin_amount: Decimal | int | str | None = None,
+    final_coin: Decimal | int | str | None = None,
 ) -> CalcResult | None:
-    """Wylicza pola według profilu giełdy; None gdy brak danych lub błąd."""
     try:
         profile = get_profile(exchange, tx_type)
     except KeyError as exc:
@@ -72,21 +86,22 @@ def resolve_trade(
 
     if value is None:
         return None
-
     raw = {
         "fee": fee,
         "fee_coin": fee_coin,
         "coin_amount": coin_amount,
         "final_coin": final_coin,
     }
-    inputs: dict[str, float] = {}
+    inputs: dict[str, Decimal] = {}
     for key in profile.input_fields:
-        val = raw[key]
-        if val is None:
+        item = raw[key]
+        if item is None:
             return None
-        inputs[key] = val
-
+        inputs[key] = _finite(parse_decimal(item), key)
     try:
-        return _to_result(profile.compute(value=value, **inputs), curr_to_pln)
-    except (ValidationError, ValueError, ZeroDivisionError):
-        return None
+        fields = profile.compute(
+            value=_finite(parse_decimal(value), "Wartość"), **inputs
+        )
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
+    return _to_result(fields, _finite(parse_decimal(curr_to_pln), "Kurs"))

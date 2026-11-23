@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass
 from datetime import date, timedelta
+from decimal import Decimal
 
 import requests
+
+from crypto_pit.domain.money import DecimalError, currency_code, parse_decimal
+from crypto_pit.services.http_json import RetryExhausted, read_json, request_response
 
 NBP_URL = "https://api.nbp.pl/api/exchangerates/rates/A/{currency}/{start}/{end}/"
 MAX_LOOKBACK_DAYS = 10
@@ -22,20 +25,21 @@ class RateFetchError(Exception):
 class NbpRate:
     code: str
     currency_name: str
-    mid: float
+    mid: Decimal
     effective_date: date
     table_no: str
 
 
 def fetch_pln_rate(currency: str, before_date: date) -> NbpRate:
-    code = (currency or "").strip().upper()
-    if not code:
-        raise RateFetchError("Brak kodu waluty")
+    try:
+        code = currency_code(currency)
+    except DecimalError as exc:
+        raise RateFetchError("Brak kodu waluty") from exc
     if code == "PLN":
         return NbpRate(
             code="PLN",
             currency_name="złoty polski",
-            mid=1.0,
+            mid=Decimal(1),
             effective_date=before_date,
             table_no="—",
         )
@@ -44,51 +48,42 @@ def fetch_pln_rate(currency: str, before_date: date) -> NbpRate:
     url = NBP_URL.format(
         currency=code, start=start.isoformat(), end=before_date.isoformat()
     )
-    resp = _request(url)
-    if resp.status_code == 404:
+    try:
+        response = request_response(
+            url,
+            params={"format": "json"},
+            headers={"Accept": "application/json"},
+            timeout=REQUEST_TIMEOUT_S,
+            attempts=MAX_ATTEMPTS,
+            pause_s=RETRY_PAUSE_S,
+            retry_if=_is_transient,
+        )
+    except RetryExhausted as exc:
+        raise RateFetchError(f"NBP chwilowo niedostępne ({exc})") from exc
+    except requests.RequestException as exc:
+        raise RateFetchError(f"Błąd połączenia z NBP: {exc}") from exc
+    if response.status_code == 404:
         raise RateFetchError(
             f"Brak tabeli NBP dla {code} w dniu {before_date.isoformat()}"
         )
-    if resp.status_code != 200:
+    if response.status_code != 200:
         raise RateFetchError(
-            f"NBP zwróciło status {resp.status_code} dla {code} ({before_date.isoformat()})"
+            f"NBP zwróciło status {response.status_code} dla {code} "
+            f"({before_date.isoformat()})"
         )
     try:
-        payload = resp.json()
+        payload = read_json(response)
     except ValueError as exc:
         raise RateFetchError(f"Niepoprawna odpowiedź NBP: {exc}") from exc
     return _rate_from_payload(code, before_date, payload)
 
 
-def _request(url: str) -> requests.Response:
-    last_status = 0
-    for attempt in range(MAX_ATTEMPTS):
-        try:
-            resp = requests.get(
-                url,
-                params={"format": "json"},
-                headers={"Accept": "application/json"},
-                timeout=REQUEST_TIMEOUT_S,
-            )
-        except requests.RequestException as exc:
-            if attempt + 1 == MAX_ATTEMPTS:
-                raise RateFetchError(f"Błąd połączenia z NBP: {exc}") from exc
-            time.sleep(RETRY_PAUSE_S)
-            continue
-        if not _is_transient(resp):
-            return resp
-        last_status = resp.status_code
-        if attempt + 1 < MAX_ATTEMPTS:
-            time.sleep(RETRY_PAUSE_S)
-    raise RateFetchError(f"NBP chwilowo niedostępne (status {last_status})")
-
-
-def _is_transient(resp: requests.Response) -> bool:
-    if resp.status_code in _RETRY_STATUS:
+def _is_transient(response: requests.Response) -> bool:
+    if response.status_code in _RETRY_STATUS:
         return True
-    if resp.status_code != 404:
+    if response.status_code != 404:
         return False
-    content_type = str(resp.headers.get("Content-Type", "")).lower()
+    content_type = str(response.headers.get("Content-Type", "")).lower()
     return "html" in content_type
 
 
@@ -104,16 +99,16 @@ def _rate_from_payload(code: str, before_date: date, payload: object) -> NbpRate
         raise RateFetchError("Niepoprawna odpowiedź NBP: brak kursów")
 
     chosen_day: date | None = None
-    chosen_mid = 0.0
+    chosen_mid = Decimal(0)
     chosen_no = ""
     for item in rates:
         if not isinstance(item, dict):
             raise RateFetchError("Niepoprawna odpowiedź NBP: brak kursów")
         try:
             table_day = date.fromisoformat(str(item["effectiveDate"]))
-            mid = float(item["mid"])
+            mid = parse_decimal(str(item["mid"]))
             table_no = str(item.get("no") or "—")
-        except (KeyError, TypeError, ValueError) as exc:
+        except (KeyError, TypeError, ValueError, DecimalError) as exc:
             raise RateFetchError(f"Niepoprawna odpowiedź NBP: {exc}") from exc
         if table_day > before_date:
             continue

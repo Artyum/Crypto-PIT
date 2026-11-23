@@ -65,7 +65,7 @@ if (-not (Test-Path -LiteralPath $Python)) {
 
 Write-Step '[VENV] Uzywam .venv\Scripts\python.exe'
 Write-Step 'Instalowanie zaleznosci...' 'Yellow'
-& $Pip install -r (Join-Path $Root 'requirements.txt')
+& $Pip install -r (Join-Path $Root 'requirements-dev.txt')
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }

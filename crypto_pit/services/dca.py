@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 
 from crypto_pit.datetime_fmt import make_local_datetime
 from crypto_pit.domain.enums import TxType
@@ -15,18 +15,18 @@ RANGE_ERROR = "Data od jest późniejsza niż data do."
 @dataclass(frozen=True)
 class DcaPurchase:
     date: datetime
-    quantity: float
-    value_pln: float
-    unit_price: float
+    quantity: Decimal
+    value_pln: Decimal
+    unit_price: Decimal
 
 
 @dataclass(frozen=True)
 class DcaRow:
     asset: str
     count: int
-    total_pln: float
-    total_qty: float
-    dca: float
+    total_pln: Decimal
+    total_qty: Decimal
+    dca: Decimal
 
 
 @dataclass(frozen=True)
@@ -44,13 +44,10 @@ def _inclusive_day_bounds(date_from: date, date_to: date) -> tuple[datetime, dat
     return start, end
 
 
-def _positive_finite(value: object) -> float | None:
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        return None
-    number = float(value)
-    if not math.isfinite(number) or number <= 0:
-        return None
-    return number
+def _positive_finite(value: Decimal) -> Decimal | None:
+    if value.is_finite() and value > 0:
+        return value
+    return None
 
 
 def _is_naive_buy(tx: Transaction) -> bool:
@@ -61,7 +58,7 @@ def _is_naive_buy(tx: Transaction) -> bool:
     )
 
 
-def _buy_parts(tx: Transaction) -> tuple[str, float, float] | None:
+def _buy_parts(tx: Transaction) -> tuple[str, Decimal, Decimal] | None:
     if not _is_naive_buy(tx):
         return None
     symbol = str(tx.asset or "").strip().upper()
@@ -101,8 +98,8 @@ def average_purchase_cost(
     total = 0
     for symbol in sorted(grouped):
         items = tuple(sorted(grouped[symbol], key=lambda item: item.date))
-        total_pln = sum(item.value_pln for item in items)
-        total_qty = sum(item.quantity for item in items)
+        total_pln = sum((item.value_pln for item in items), start=Decimal(0))
+        total_qty = sum((item.quantity for item in items), start=Decimal(0))
         rows.append(
             DcaRow(
                 asset=symbol,

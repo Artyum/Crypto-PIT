@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import sqlite3
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
-
 from crypto_pit.domain.models import Holding
 from crypto_pit.infrastructure.database import DEFAULT_HOLDING_LOCATION, Database
 
@@ -71,7 +71,7 @@ def test_holdings_migration_adds_default_location(tmp_path: Path) -> None:
         assert len(holdings) == 1
         assert holdings[0].coin_id == "bitcoin"
         assert holdings[0].location == DEFAULT_HOLDING_LOCATION
-        assert holdings[0].amount == 1.5
+        assert holdings[0].amount == Decimal("1.5")
     finally:
         db.close()
 
@@ -80,10 +80,17 @@ def test_same_coin_different_locations_allowed(tmp_path: Path) -> None:
     db = Database(tmp_path / "holdings.db")
     try:
         db.insert_holding(
-            Holding(coin_id="bitcoin", symbol="BTC", amount=1.0, location="Ledger")
+            Holding(
+                coin_id="bitcoin", symbol="BTC", amount=Decimal(1), location="Ledger"
+            )
         )
         db.insert_holding(
-            Holding(coin_id="bitcoin", symbol="BTC", amount=0.5, location="Trezor")
+            Holding(
+                coin_id="bitcoin",
+                symbol="BTC",
+                amount=Decimal("0.5"),
+                location="Trezor",
+            )
         )
         holdings = db.list_holdings()
         assert len(holdings) == 2
@@ -96,14 +103,21 @@ def test_same_coin_same_location_rejected(tmp_path: Path) -> None:
     db = Database(tmp_path / "holdings_dup.db")
     try:
         db.insert_holding(
-            Holding(coin_id="bitcoin", symbol="BTC", amount=1.0, location="Ledger")
+            Holding(
+                coin_id="bitcoin", symbol="BTC", amount=Decimal(1), location="Ledger"
+            )
         )
         with pytest.raises(sqlite3.IntegrityError):
             db.insert_holding(
-                Holding(coin_id="bitcoin", symbol="BTC", amount=2.0, location="Ledger")
+                Holding(
+                    coin_id="bitcoin",
+                    symbol="BTC",
+                    amount=Decimal(2),
+                    location="Ledger",
+                )
             )
         holdings = db.list_holdings()
         assert len(holdings) == 1
-        assert holdings[0].amount == 1.0
+        assert holdings[0].amount == Decimal(1)
     finally:
         db.close()

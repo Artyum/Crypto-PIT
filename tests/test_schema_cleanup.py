@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 from crypto_pit.datetime_fmt import parse_naive
@@ -102,7 +103,7 @@ def test_destructive_migration_drops_import_columns(tmp_path: Path) -> None:
         txs = db.list_transactions()
         assert len(txs) == 1
         assert txs[0].asset == "BTC"
-        assert txs[0].value_pln == 1000.0
+        assert txs[0].value_pln == Decimal(1000)
         assert txs[0].confirmed is True
         assert txs[0].exchange == "Binance"
         assert txs[0].note == "note"
@@ -116,27 +117,29 @@ def test_backup_roundtrip(tmp_path: Path) -> None:
         date=parse_naive("2024-03-01 12:00", "%Y-%m-%d %H:%M"),
         type=TxType.SELL,
         asset="ETH",
-        amount=1.5,
-        value_pln=15000.0,
-        fee_pln=10.0,
+        amount=Decimal("1.5"),
+        value_pln=Decimal(15000),
+        fee_pln=Decimal(10),
         exchange="Zonda",
         note="ok",
         currency="PLN",
-        value=15000.0,
-        curr_to_pln=1.0,
-        coin_amount=1.5,
-        price=10000.0,
-        price_pln=10000.0,
-        fee_coin=0.0,
-        fee=10.0,
-        final_coin=1.5,
+        value=Decimal(15000),
+        curr_to_pln=Decimal(1),
+        coin_amount=Decimal("1.5"),
+        price=Decimal(10000),
+        price_pln=Decimal(10000),
+        fee_coin=Decimal(0),
+        fee=Decimal(10),
+        final_coin=Decimal("1.5"),
         confirmed=True,
         nbp_date=date(2024, 2, 29),
         nbp_table="41/A/NBP/2024",
     )
     holdings = [
-        Holding(coin_id="bitcoin", symbol="BTC", amount=0.5, location="Binance"),
-        Holding(coin_id="ethereum", symbol="ETH", amount=2.0, location="Ledger"),
+        Holding(
+            coin_id="bitcoin", symbol="BTC", amount=Decimal("0.5"), location="Binance"
+        ),
+        Holding(coin_id="ethereum", symbol="ETH", amount=Decimal(2), location="Ledger"),
     ]
     export_backup(path, [tx], holdings)
 
@@ -152,7 +155,7 @@ def test_backup_roundtrip(tmp_path: Path) -> None:
     db = Database(tmp_path / "restore.db")
     try:
         db.insert_holding(
-            Holding(coin_id="old", symbol="OLD", amount=1.0, location="X")
+            Holding(coin_id="old", symbol="OLD", amount=Decimal(1), location="X")
         )
         n_tx, n_h = db.replace_all_data(data.transactions, data.holdings)
         assert (n_tx, n_h) == (1, 2)

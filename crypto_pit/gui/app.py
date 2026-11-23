@@ -13,10 +13,11 @@ from crypto_pit.gui.tabs.holdings import HoldingsTab
 from crypto_pit.gui.tabs.pit import PitTab
 from crypto_pit.gui.tabs.transactions import TransactionsTab
 from crypto_pit.gui.tabs.years import YearsTab
+from crypto_pit.gui.tasks import UiTaskRunner
 from crypto_pit.gui.theme import COLORS, FONT_HEADING, FONT_UI_BOLD, apply_theme
 from crypto_pit.gui.window_pos import askyesno, center_window, showerror, showinfo
 from crypto_pit.infrastructure.database import Database
-from crypto_pit.services.backup import export_backup, parse_backup
+from crypto_pit.services.backup import BackupData, export_backup, parse_backup
 from crypto_pit.services.calculator import settle_years
 from crypto_pit.services.crypto_rates import CryptoRatesService
 from crypto_pit.services.reporting import export_report
@@ -37,6 +38,8 @@ class CryptoPitApp(tk.Tk):
 
         self.db = Database(db_path or DEFAULT_DB_PATH)
         self.crypto_rates = CryptoRatesService()
+        self.tasks = UiTaskRunner(self)
+        self._io_busy = False
         self.settlements: dict = {}
 
         self._build()
@@ -142,7 +145,15 @@ class CryptoPitApp(tk.Tk):
         self.tab_years.refresh()
         self.tab_pit.refresh()
 
+    def _busy(self) -> bool:
+        if not self._io_busy:
+            return False
+        showinfo("Poczekaj", "Trwa operacja na danych.", parent=self)
+        return True
+
     def export_csv(self) -> None:
+        if self._busy():
+            return
         path = filedialog.asksaveasfilename(
             title="Eksport raportu",
             defaultextension=".csv",
@@ -152,12 +163,18 @@ class CryptoPitApp(tk.Tk):
         )
         if not path:
             return
-        txs = self.db.list_transactions()
-        settlements = settle_years(txs)
-        export_report(path, txs, settlements)
+        try:
+            txs = self.db.list_transactions()
+            settlements = settle_years(txs)
+            export_report(path, txs, settlements)
+        except (OSError, sqlite3.Error) as exc:
+            showerror("Eksport", str(exc), parent=self)
+            return
         showinfo("Eksport", f"Zapisano:\n{path}", parent=self)
 
     def export_backup(self) -> None:
+        if self._busy():
+            return
         path = filedialog.asksaveasfilename(
             title="Eksport backupu",
             defaultextension=".zip",
@@ -167,11 +184,11 @@ class CryptoPitApp(tk.Tk):
         )
         if not path:
             return
-        txs = self.db.list_transactions()
-        holdings = self.db.list_holdings()
         try:
+            txs = self.db.list_transactions()
+            holdings = self.db.list_holdings()
             export_backup(path, txs, holdings)
-        except OSError as exc:
+        except (OSError, sqlite3.Error) as exc:
             showerror("Backup", str(exc), parent=self)
             return
         showinfo(
@@ -182,6 +199,8 @@ class CryptoPitApp(tk.Tk):
         )
 
     def import_backup(self) -> None:
+        if self._busy():
+            return
         path = filedialog.askopenfilename(
             title="Import backupu",
             filetypes=[("Backup ZIP", "*.zip"), ("Wszystkie", "*.*")],
@@ -189,36 +208,54 @@ class CryptoPitApp(tk.Tk):
         )
         if not path:
             return
-        try:
-            data = parse_backup(path)
-        except (ValueError, OSError) as exc:
-            showerror("Import backupu", str(exc), parent=self)
-            return
+        self._io_busy = True
 
-        existing_tx = len(self.db.list_transactions())
-        existing_h = len(self.db.list_holdings())
-        if not askyesno(
-            "Import backupu",
-            f"Wczytano {len(data.transactions)} transakcji "
-            f"i {len(data.holdings)} pozycji portfela.\n\n"
-            f"Obecna baza ({existing_tx} transakcji, {existing_h} pozycji) "
-            f"zostanie całkowicie zastąpiona.\n\nKontynuować?",
-            parent=self,
-        ):
-            return
-        try:
-            n_tx, n_h = self.db.replace_all_data(data.transactions, data.holdings)
-        except sqlite3.Error as exc:
+        def read() -> BackupData:
+            return parse_backup(path)
+
+        def read_ok(data: BackupData) -> None:
+            self._io_busy = False
+            backup = data
+            existing_tx = len(self.db.list_transactions())
+            existing_h = len(self.db.list_holdings())
+            if not askyesno(
+                "Import backupu",
+                f"Wczytano {len(backup.transactions)} transakcji "
+                f"i {len(backup.holdings)} pozycji portfela.\n\n"
+                f"Obecna baza ({existing_tx} transakcji, {existing_h} pozycji) "
+                f"zostanie całkowicie zastąpiona.\n\nKontynuować?",
+                parent=self,
+            ):
+                return
+            self._io_busy = True
+
+            def write() -> tuple[int, int]:
+                return self.db.replace_all_data(backup.transactions, backup.holdings)
+
+            def write_ok(result: tuple[int, int]) -> None:
+                self._io_busy = False
+                n_tx, n_h = result
+                showinfo(
+                    "Import backupu",
+                    f"Przywrócono {n_tx} transakcji i {n_h} pozycji portfela.",
+                    parent=self,
+                )
+                self.refresh_all()
+
+            def write_err(exc: BaseException) -> None:
+                self._io_busy = False
+                showerror("Import backupu", str(exc), parent=self)
+
+            self.tasks.submit(write, write_ok, write_err)
+
+        def read_err(exc: BaseException) -> None:
+            self._io_busy = False
             showerror("Import backupu", str(exc), parent=self)
-            return
-        showinfo(
-            "Import backupu",
-            f"Przywrócono {n_tx} transakcji i {n_h} pozycji portfela.",
-            parent=self,
-        )
-        self.refresh_all()
+
+        self.tasks.submit(read, read_ok, read_err)
 
     def destroy(self) -> None:
+        self.tasks.close()
         self.db.close()
         super().destroy()
 
@@ -249,7 +286,8 @@ class AboutDialog:
         ttk.Label(
             body,
             text=(
-                "Program desktopowy do ewidencji transakcji kryptowalut i przygotowania kwot do PIT-38."
+                "Program desktopowy do ewidencji transakcji kryptowalut "
+                "i przygotowania kwot do PIT-38."
             ),
             wraplength=420,
             justify=tk.LEFT,

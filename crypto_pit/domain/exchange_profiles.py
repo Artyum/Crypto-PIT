@@ -2,31 +2,33 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Final
 
 from crypto_pit.domain.enums import TxType
+from crypto_pit.domain.money import quantize
 
 _PRICE_DECIMALS = 6
 _COIN_DECIMALS = 8
 
 
-def _rprice(v: float) -> float:
-    return round(v, _PRICE_DECIMALS)
+def _rprice(value: Decimal) -> Decimal:
+    return quantize(value, _PRICE_DECIMALS)
 
 
-def _rcoin(v: float) -> float:
-    return round(v, _COIN_DECIMALS)
+def _rcoin(value: Decimal) -> Decimal:
+    return quantize(value, _COIN_DECIMALS)
 
 
 def _pack(
     *,
-    value: float,
-    fee: float,
-    fee_coin: float,
-    coin_amount: float,
-    final_coin: float,
-    price: float,
-) -> dict[str, float]:
+    value: Decimal,
+    fee: Decimal,
+    fee_coin: Decimal,
+    coin_amount: Decimal,
+    final_coin: Decimal,
+    price: Decimal,
+) -> dict[str, Decimal]:
     return {
         "value": value,
         "fee": fee,
@@ -41,18 +43,19 @@ def _pack(
 class CalcProfile:
     id: str
     input_fields: tuple[str, ...]
-    compute: Callable[..., dict[str, float]]
+    compute: Callable[..., dict[str, Decimal]]
     value_label: str | None = None
     value_hint: str | None = None
 
 
-def _fee_final_coin(*, value: float, fee: float, final_coin: float) -> dict[str, float]:
-    """Buy Binance/OKX/Kraken/Coinbase: price = (value - fee) / final_coin."""
+def _fee_final_coin(
+    *, value: Decimal, fee: Decimal, final_coin: Decimal
+) -> dict[str, Decimal]:
     net = value - fee
     if net <= 0 or final_coin <= 0:
         raise ValueError("Wartość po prowizji i finalna ilość muszą być > 0")
     price = _rprice(net / final_coin)
-    fee_coin = _rcoin(fee / price) if price else 0.0
+    fee_coin = _rcoin(fee / price) if price else Decimal(0)
     return _pack(
         value=value,
         fee=fee,
@@ -64,9 +67,8 @@ def _fee_final_coin(*, value: float, fee: float, final_coin: float) -> dict[str,
 
 
 def _coin_amount_fee_coin(
-    *, value: float, coin_amount: float, fee_coin: float
-) -> dict[str, float]:
-    """Buy Zonda: price = value / coin_amount."""
+    *, value: Decimal, coin_amount: Decimal, fee_coin: Decimal
+) -> dict[str, Decimal]:
     if coin_amount <= 0 or fee_coin < 0:
         raise ValueError("Nieprawidłowa ilość waloru lub prowizja")
     price = _rprice(value / coin_amount)
@@ -84,9 +86,8 @@ def _coin_amount_fee_coin(
 
 
 def _fee_coin_final_coin(
-    *, value: float, fee_coin: float, final_coin: float
-) -> dict[str, float]:
-    """Buy Kanga: coin_amount = final_coin + fee_coin; price = value / coin_amount."""
+    *, value: Decimal, fee_coin: Decimal, final_coin: Decimal
+) -> dict[str, Decimal]:
     if fee_coin < 0 or final_coin <= 0:
         raise ValueError("Nieprawidłowa prowizja lub finalna ilość")
     coin_amount = _rcoin(final_coin + fee_coin)
@@ -102,13 +103,12 @@ def _fee_coin_final_coin(
 
 
 def _coin_amount_fee(
-    *, value: float, coin_amount: float, fee: float
-) -> dict[str, float]:
-    """Sell: price = value / coin_amount."""
+    *, value: Decimal, coin_amount: Decimal, fee: Decimal
+) -> dict[str, Decimal]:
     if coin_amount <= 0 or fee < 0:
         raise ValueError("Nieprawidłowa ilość waloru lub prowizja")
     price = _rprice(value / coin_amount)
-    fee_coin = _rcoin(fee / price) if price else 0.0
+    fee_coin = _rcoin(fee / price) if price else Decimal(0)
     final_coin = _rcoin(coin_amount - fee_coin)
     if final_coin <= 0:
         raise ValueError("Finalna ilość waloru musi być większa od zera")

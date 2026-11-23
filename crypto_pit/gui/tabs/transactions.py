@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import sqlite3
 import tkinter as tk
+from decimal import Decimal
 from tkinter import ttk
 from typing import TYPE_CHECKING
 
@@ -15,7 +17,7 @@ from crypto_pit.gui.widgets import (
     insert_row,
     setup_columns,
 )
-from crypto_pit.gui.window_pos import askyesno, showinfo
+from crypto_pit.gui.window_pos import askyesno, showerror, showinfo
 
 if TYPE_CHECKING:
     from crypto_pit.gui.app import CryptoPitApp
@@ -135,10 +137,9 @@ class TransactionsTab:
         txs = self.app.db.list_transactions(year=year, tx_type=self._type_filter())
 
         self.tree.delete(*self.tree.get_children())
-        sum_rev = sum_cost = 0.0
+        sum_rev = sum((tx.pit_revenue() for tx in txs), start=Decimal(0))
+        sum_cost = sum((tx.pit_cost() for tx in txs), start=Decimal(0))
         for i, tx in enumerate(txs):
-            sum_rev += round(tx.pit_revenue(), 2)
-            sum_cost += round(tx.pit_cost(), 2)
             insert_row(self.tree, _tx_values(i + 1, tx), iid=str(tx.id), index=i)
         self.sum_label.config(
             text=(
@@ -181,6 +182,11 @@ class TransactionsTab:
             return
         sel = self.tree.selection()[0]
         lp = self.tree.item(sel, "values")[0]
-        if askyesno("Usuń", f"Usunąć transakcję Lp. {lp}?", parent=self.app):
+        if not askyesno("Usuń", f"Usunąć transakcję Lp. {lp}?", parent=self.app):
+            return
+        try:
             self.app.db.delete_transaction(tx_id)
-            self.app.refresh_all()
+        except sqlite3.Error as exc:
+            showerror("Usuń", str(exc), parent=self.app)
+            return
+        self.app.refresh_all()

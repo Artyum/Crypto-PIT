@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 
-class TxType(str, Enum):
+class TxType(StrEnum):
     BUY = "buy"
     SELL = "sell"
     OTHER = "other"
@@ -31,5 +31,9 @@ TYPE_ALIASES: dict[str, TxType] = {
 
 def normalize_tx_type(raw: str | None) -> TxType:
     if raw is None or not str(raw).strip():
-        return TxType.OTHER
-    return TYPE_ALIASES.get(str(raw).strip().lower(), TxType.OTHER)
+        raise ValueError("brak typu transakcji")
+    key = str(raw).strip().lower()
+    try:
+        return TYPE_ALIASES[key]
+    except KeyError as exc:
+        raise ValueError(f"nieznany typ transakcji: {raw}") from exc

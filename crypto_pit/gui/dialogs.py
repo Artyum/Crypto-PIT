@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import sqlite3
-import threading
 import tkinter as tk
 from collections.abc import Callable
 from datetime import timedelta
+from decimal import Decimal
 from tkinter import ttk
 from typing import TYPE_CHECKING
 
@@ -18,13 +18,15 @@ from crypto_pit.domain.exchange_profiles import (
     has_profile,
 )
 from crypto_pit.domain.models import Transaction
+from crypto_pit.domain.money import decimal_to_text, parse_decimal, quantize
 from crypto_pit.gui.datetime_picker import ask_datetime
-from crypto_pit.gui.formatters import fmt_datetime, parse_datetime, parse_float
+from crypto_pit.gui.formatters import fmt_datetime, parse_datetime
 from crypto_pit.gui.theme import COLORS, apply_theme
 from crypto_pit.gui.window_pos import center_window, showerror, showinfo
-from crypto_pit.services.nbp_rates import NbpRate, RateFetchError, fetch_pln_rate
+from crypto_pit.services.nbp_rates import NbpRate, fetch_pln_rate
 
 if TYPE_CHECKING:
+    from crypto_pit.gui.app import CryptoPitApp
     from crypto_pit.infrastructure.database import Database
 
 GAP = 4
@@ -51,19 +53,15 @@ _DEFAULT_VALUE_LABELS = {
 }
 
 
-def _fmt_num(v: float, digits: int = 8) -> str:
-    if abs(v) < 1e-12:
-        return "0"
-    s = f"{v:.{digits}f}".rstrip("0").rstrip(".")
-    return s if s else "0"
+def _fmt_num(value: Decimal, digits: int = 8) -> str:
+    return decimal_to_text(quantize(value, digits))
 
 
-def _safe_float(text: str) -> float | None:
-    s = text.strip()
-    if not s:
+def _safe_decimal(text: str) -> Decimal | None:
+    if not text.strip():
         return None
     try:
-        return parse_float(s)
+        return parse_decimal(text)
     except ValueError:
         return None
 
@@ -77,18 +75,19 @@ def _tx_field(
 ) -> str:
     if tx is None:
         return ""
-    val = float(getattr(tx, primary) or 0)
-    if not val and fallback:
-        val = float(getattr(tx, fallback) or 0)
-    return _fmt_num(val, digits)
+    value = getattr(tx, primary)
+    if (value is None or value == 0) and fallback:
+        value = getattr(tx, fallback)
+    if not isinstance(value, Decimal):
+        return ""
+    return _fmt_num(value, digits)
 
 
 def migrate_profile_inputs(
-    values: dict[str, float | None],
+    values: dict[str, Decimal | None],
     old_profile: CalcProfile | None,
     new_profile: CalcProfile,
-) -> dict[str, float | None]:
-    """Zachowaj wspólne pola wejściowe przy zmianie profilu; wyczyść resztę."""
+) -> dict[str, Decimal | None]:
     keep = set(new_profile.input_fields)
     if old_profile is not None:
         keep &= set(old_profile.input_fields)
@@ -100,7 +99,6 @@ def visible_input_fields(exchange: str, tx_type: TxType) -> tuple[str, ...]:
 
 
 def value_input_labels(exchange: str, tx_type: TxType) -> tuple[str, str]:
-    """Zwróć opis wartości zgodny z profilem raportowania giełdy."""
     default = _DEFAULT_VALUE_LABELS.get(tx_type.label_pl, ("Wartość", ""))
     try:
         profile = get_profile(exchange, tx_type)
@@ -123,7 +121,7 @@ def _match_exchange(raw: str | None) -> str:
 
 
 def open_transaction_dialog(
-    parent: tk.Tk,
+    parent: CryptoPitApp,
     db: Database,
     on_saved: Callable[[], None],
     tx: Transaction | None = None,
@@ -134,17 +132,20 @@ def open_transaction_dialog(
 class TransactionDialog:
     def __init__(
         self,
-        parent: tk.Tk,
+        parent: CryptoPitApp,
         db: Database,
         on_saved: Callable[[], None],
         tx: Transaction | None = None,
     ) -> None:
+        self.parent = parent
         self.db = db
         self.on_saved = on_saved
         self.tx = tx
         self._updating = False
         self._last_calc: CalcResult | None = None
+        self._last_error = ""
         self._rate_busy = False
+        self._rate_token: int | None = None
         self._nbp_date = tx.nbp_date if tx else None
         self._nbp_table = tx.nbp_table if tx else ""
         self._nbp_name = ""
@@ -161,6 +162,7 @@ class TransactionDialog:
         self.dlg.transient(parent)
         self.dlg.grab_set()
         self.dlg.resizable(False, False)
+        self.dlg.bind("<Destroy>", self._cancel_rate, add="+")
 
         initial_exchange = _match_exchange(tx.exchange if tx else None)
         type_label = "Sprzedaż" if tx and tx.type == TxType.SELL else "Kupno"
@@ -521,7 +523,7 @@ class TransactionDialog:
     def _migrate_inputs(
         self, old_profile: CalcProfile, new_profile: CalcProfile
     ) -> None:
-        current = {k: _safe_float(self._vars[k].get()) for k in _PROFILE_INPUT_KEYS}
+        current = {k: _safe_decimal(self._vars[k].get()) for k in _PROFILE_INPUT_KEYS}
         migrated = migrate_profile_inputs(current, old_profile, new_profile)
         self._updating = True
         try:
@@ -613,34 +615,44 @@ class TransactionDialog:
             self._last_calc = None
             self._clear_outputs()
             return
-        rate = _safe_float(self.rate_var.get())
+        rate = _safe_decimal(self.rate_var.get())
         if rate is None or rate <= 0:
             self._last_calc = None
             self._clear_outputs()
             return
 
         kwargs = {
-            key: _safe_float(self._vars[key].get()) for key in _PROFILE_INPUT_KEYS
+            key: _safe_decimal(self._vars[key].get()) for key in _PROFILE_INPUT_KEYS
         }
+        self._last_error = ""
         try:
             result = resolve_trade(
                 exchange=self.exchange_var.get().strip(),
                 tx_type=self._tx_type(),
                 curr_to_pln=rate,
-                value=_safe_float(self.value_var.get()),
+                value=_safe_decimal(self.value_var.get()),
                 fee=kwargs["fee"],
                 fee_coin=kwargs["fee_coin"],
                 coin_amount=kwargs["coin_amount"],
                 final_coin=kwargs["final_coin"],
             )
-        except ValidationError:
-            result = None
+        except ValidationError as exc:
+            self._last_calc = None
+            self._last_error = str(exc)
+            self._clear_outputs()
+            return
 
         self._last_calc = result
         if result is None:
             self._clear_outputs()
         else:
             self._set_outputs(result)
+
+    def _cancel_rate(self, event: tk.Event) -> None:
+        if event.widget is not self.dlg or self._rate_token is None:
+            return
+        self.parent.tasks.cancel(self._rate_token)
+        self._rate_token = None
 
     def _fetch_rate(self) -> None:
         if self._rate_busy:
@@ -662,15 +674,18 @@ class TransactionDialog:
         self.rate_info.config(text=f"Szukam kursu {code}/PLN…")
         self.rate_details_btn.grid_remove()
 
-        def worker() -> None:
-            try:
-                result = fetch_pln_rate(code, before)
-                self.dlg.after(0, lambda: self._on_rate_ok(result))
-            except RateFetchError as exc:
-                msg = str(exc)
-                self.dlg.after(0, lambda m=msg: self._on_rate_err(m))
+        def work() -> NbpRate:
+            return fetch_pln_rate(code, before)
 
-        threading.Thread(target=worker, daemon=True).start()
+        def ok(result: NbpRate) -> None:
+            self._rate_token = None
+            self._on_rate_ok(result)
+
+        def err(exc: BaseException) -> None:
+            self._rate_token = None
+            self._on_rate_err(str(exc))
+
+        self._rate_token = self.parent.tasks.submit(work, ok, err)
 
     def _on_rate_ok(self, result: NbpRate) -> None:
         self._rate_busy = False
@@ -738,7 +753,8 @@ class TransactionDialog:
             self._recalc()
             if self._last_calc is None:
                 raise ValidationError(
-                    "Uzupełnij pola tak, aby dało się wyliczyć wartość i ilość"
+                    self._last_error
+                    or "Uzupełnij pola tak, aby dało się wyliczyć wartość i ilość"
                 )
             c = self._last_calc
             amount = c["final_coin"] if tx_type == TxType.BUY else c["coin_amount"]

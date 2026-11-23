@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from crypto_pit.config import TAX_RATE
 from crypto_pit.datetime_fmt import fmt_datetime
 from crypto_pit.domain.enums import TxType
 from crypto_pit.domain.models import Transaction, YearSettlement
+from crypto_pit.domain.money import quantize
 from crypto_pit.domain.pit38 import round_pit_amount
 
 
@@ -25,8 +28,12 @@ def settle_years(transactions: list[Transaction]) -> list[YearSettlement]:
 
     for year in all_years:
         txs = by_year.get(year, [])
-        revenue = round_pit_amount(sum(t.pit_revenue() for t in txs))
-        costs_current = round_pit_amount(sum(t.pit_cost() for t in txs))
+        revenue = round_pit_amount(
+            sum((t.pit_revenue() for t in txs), start=Decimal(0))
+        )
+        costs_current = round_pit_amount(
+            sum((t.pit_cost() for t in txs), start=Decimal(0))
+        )
         costs_prior = carried
         costs_total = costs_current + costs_prior
 
@@ -37,7 +44,7 @@ def settle_years(transactions: list[Transaction]) -> list[YearSettlement]:
             income = revenue - costs_total
             next_carried = 0
 
-        tax = round_pit_amount(income * TAX_RATE)
+        tax = round_pit_amount(Decimal(income) * TAX_RATE)
 
         results.append(
             YearSettlement(
@@ -60,7 +67,7 @@ def settle_years(transactions: list[Transaction]) -> list[YearSettlement]:
     return results
 
 
-def line_impact(tx: Transaction) -> dict[str, float | str]:
+def line_impact(tx: Transaction) -> dict[str, Decimal | int | str]:
     return {
         "id": tx.id or 0,
         "date": fmt_datetime(tx.date),
@@ -69,7 +76,7 @@ def line_impact(tx: Transaction) -> dict[str, float | str]:
         "amount": tx.amount,
         "value_pln": tx.value_pln,
         "fee_pln": tx.fee_pln,
-        "przychod": round(tx.pit_revenue(), 2),
-        "koszt": round(tx.pit_cost(), 2),
+        "przychod": quantize(tx.pit_revenue(), 2),
+        "koszt": quantize(tx.pit_cost(), 2),
         "note": tx.note,
     }

@@ -36,10 +36,10 @@ if (-not (Test-Path $requirements)) {
     exit 1
 }
 
-Write-Host "Aktualizacja pip i instalacja pip-audit..."
-& $venvPython -m pip install --quiet --upgrade pip pip-audit
+Write-Host "Instalacja zaleznosci deweloperskich..."
+& $venvPython -m pip install --quiet -r (Join-Path $Root "requirements-dev.txt")
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "[BLAD] Nie udalo sie zainstalowac pip-audit"
+    Write-Host "[BLAD] Nie udalo sie zainstalowac requirements-dev.txt"
     exit 1
 }
 
@@ -108,8 +108,8 @@ $results = @(
     (Invoke-AuditStep 1 "pip-audit requirements.txt" @(
         "-m", "pip_audit", "-r", "requirements.txt", "--desc", "on", "--progress-spinner", "off"
     ))
-    (Invoke-AuditStep 2 "pip-audit zainstalowane pakiety (.venv)" @(
-        "-m", "pip_audit", "--local", "--desc", "on", "--progress-spinner", "off"
+    (Invoke-AuditStep 2 "pip-audit requirements-dev.txt" @(
+        "-m", "pip_audit", "-r", "requirements-dev.txt", "--desc", "on", "--progress-spinner", "off"
     ))
 )
 

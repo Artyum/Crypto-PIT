@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import threading
 import tkinter as tk
 from tkinter import ttk
 from typing import TYPE_CHECKING
@@ -16,7 +15,6 @@ from crypto_pit.gui.widgets import (
     insert_row,
     setup_columns,
 )
-from crypto_pit.services.crypto_rates import CryptoRateFetchError
 from crypto_pit.services.dca import (
     DcaResult,
     buy_years,
@@ -45,6 +43,7 @@ class DcaTab:
         self._applying = False
         self._rates_loaded = False
         self._fetch_busy = False
+        self._fetch_token: int | None = None
         self._result = DcaResult((), {}, 0, "")
         self.from_var = tk.StringVar()
         self.to_var = tk.StringVar()
@@ -159,18 +158,22 @@ class DcaTab:
         rates = self.app.crypto_rates
         holdings = self.app.db.list_holdings()
 
-        def worker() -> None:
-            try:
-                for holding in holdings:
-                    rates.remember_symbol(holding.symbol, holding.coin_id)
-                mapping = rates.resolve_symbols(assets)
-                rates.fetch_prices(list(mapping.values()), force_refresh=force)
-                err = ""
-            except CryptoRateFetchError as exc:
-                err = str(exc)
-            self.frame.after(0, lambda: self._on_fetch_done(err))
+        def work() -> str:
+            for holding in holdings:
+                rates.remember_symbol(holding.symbol, holding.coin_id)
+            mapping = rates.resolve_symbols(assets)
+            rates.fetch_prices(list(mapping.values()), force_refresh=force)
+            return ""
 
-        threading.Thread(target=worker, daemon=True).start()
+        def ok(_result: str) -> None:
+            self._fetch_token = None
+            self._on_fetch_done("")
+
+        def err(exc: BaseException) -> None:
+            self._fetch_token = None
+            self._on_fetch_done(str(exc))
+
+        self._fetch_token = self.app.tasks.submit(work, ok, err)
 
     def _on_fetch_done(self, error: str) -> None:
         self._fetch_busy = False

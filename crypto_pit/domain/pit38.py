@@ -80,9 +80,13 @@ def pit38_field_range(year: int) -> str:
     return f"{numbers[0]}–{numbers[-1]}"
 
 
-def round_pit_amount(value: float) -> int:
-    """Zaokrąglij kwotę do pełnych złotych według zasad dla zeznań PIT."""
-    return int(Decimal(str(value)).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+def round_pit_amount(value: Decimal | int) -> int:
+    if isinstance(value, bool | float):
+        raise TypeError("kwota PIT musi być skończoną liczbą")
+    number = value if isinstance(value, Decimal) else Decimal(value)
+    if not number.is_finite():
+        raise ValueError("kwota PIT musi być skończoną liczbą")
+    return int(number.quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
 
 def pit38_short_header(key: str) -> str:

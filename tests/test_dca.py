@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 import pytest
-
 from crypto_pit.datetime_fmt import parse_naive
 from crypto_pit.domain.enums import TxType
 from crypto_pit.domain.models import Transaction
@@ -22,18 +22,19 @@ def _tx(
     *,
     tx_type: TxType = TxType.BUY,
     asset: str = "BTC",
-    value_pln: float = 100.0,
-    final_coin: float = 1.0,
-    fee_pln: float = 0.0,
+    value_pln: str = "100",
+    final_coin: str = "1",
+    fee_pln: str = "0",
 ) -> Transaction:
+    quantity = Decimal(final_coin)
     return Transaction(
         date=parse_naive(when, "%Y-%m-%d %H:%M"),
         type=tx_type,
         asset=asset,
-        amount=final_coin,
-        value_pln=value_pln,
-        fee_pln=fee_pln,
-        final_coin=final_coin,
+        amount=quantity,
+        value_pln=Decimal(value_pln),
+        fee_pln=Decimal(fee_pln),
+        final_coin=quantity,
     )
 
 
@@ -53,10 +54,10 @@ def test_dca_weights_cheaper_purchase_by_quantity() -> None:
     row = result.rows[0]
     assert row.asset == "BTC"
     assert row.count == 2
-    assert row.total_pln == pytest.approx(200_000)
-    assert row.total_qty == pytest.approx(3)
-    assert row.dca == pytest.approx(200_000 / 3)
-    assert result.purchases_by_asset["BTC"][1].quantity == pytest.approx(2)
+    assert row.total_pln == Decimal(200_000)
+    assert row.total_qty == Decimal(3)
+    assert row.dca == Decimal(200_000) / Decimal(3)
+    assert result.purchases_by_asset["BTC"][1].quantity == Decimal(2)
 
 
 def test_range_includes_both_end_days_and_excludes_neighbours() -> None:
@@ -72,8 +73,8 @@ def test_range_includes_both_end_days_and_excludes_neighbours() -> None:
     )
 
     assert result.total_purchases == 2
-    assert result.rows[0].total_pln == pytest.approx(40)
-    assert result.rows[0].dca == pytest.approx(20)
+    assert result.rows[0].total_pln == Decimal(40)
+    assert result.rows[0].dca == Decimal(20)
 
 
 def test_sell_and_other_are_ignored() -> None:
@@ -88,7 +89,7 @@ def test_sell_and_other_are_ignored() -> None:
     )
 
     assert result.total_purchases == 1
-    assert result.rows[0].dca == pytest.approx(40)
+    assert result.rows[0].dca == Decimal(40)
     assert len(result.purchases_by_asset["BTC"]) == 1
 
 
@@ -100,25 +101,18 @@ def test_fee_pln_does_not_increase_cost() -> None:
     )
 
     purchase = result.purchases_by_asset["BTC"][0]
-    assert result.rows[0].dca == pytest.approx(100)
-    assert result.rows[0].total_pln == pytest.approx(100)
-    assert purchase.quantity == pytest.approx(1)
-    assert purchase.unit_price == pytest.approx(100)
+    assert result.rows[0].dca == Decimal(100)
+    assert result.rows[0].total_pln == Decimal(100)
+    assert purchase.quantity == Decimal(1)
+    assert purchase.unit_price == Decimal(100)
 
 
-def test_invalid_buy_is_skipped_and_valid_neighbour_remains() -> None:
-    invalid = _tx("2024-07-01 10:00", asset="ETH", value_pln=10, final_coin=1)
-    invalid.value_pln = None  # type: ignore[assignment]
+def test_non_positive_buy_is_skipped_and_invalid_numbers_are_rejected() -> None:
     result = average_purchase_cost(
         [
-            _tx("2024-07-01 11:00", asset="ETH", value_pln=50, final_coin=2),
-            _tx("2024-07-01 12:00", asset="ETH", value_pln=-10, final_coin=1),
-            _tx("2024-07-01 13:00", asset="ETH", value_pln=float("nan"), final_coin=1),
-            _tx("2024-07-01 14:00", asset="ETH", value_pln=float("inf"), final_coin=1),
-            _tx("2024-07-01 15:00", asset="ETH", value_pln=10, final_coin=0),
-            _tx("2024-07-01 16:00", asset="ETH", value_pln=10, final_coin=-1),
-            _tx("2024-07-01 17:00", asset="  ", value_pln=10, final_coin=1),
-            invalid,
+            _tx("2024-07-01 11:00", asset="ETH", value_pln="50", final_coin="2"),
+            _tx("2024-07-01 15:00", asset="ETH", value_pln="10", final_coin="0"),
+            _tx("2024-07-01 17:00", asset="  ", value_pln="10", final_coin="1"),
         ],
         date(2024, 7, 1),
         date(2024, 7, 1),
@@ -127,8 +121,12 @@ def test_invalid_buy_is_skipped_and_valid_neighbour_remains() -> None:
     assert result.error == ""
     assert result.total_purchases == 1
     assert result.rows[0].asset == "ETH"
-    assert result.rows[0].dca == pytest.approx(25)
-    assert result.purchases_by_asset["ETH"][0].unit_price == pytest.approx(25)
+    assert result.rows[0].dca == Decimal(25)
+    assert result.purchases_by_asset["ETH"][0].unit_price == Decimal(25)
+    with pytest.raises(ValueError):
+        _tx("2024-07-01 12:00", value_pln="-10")
+    with pytest.raises(ValueError):
+        _tx("2024-07-01 13:00", value_pln="NaN")
 
 
 def test_no_buys_returns_empty_result() -> None:

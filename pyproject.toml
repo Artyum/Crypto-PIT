@@ -1,0 +1,37 @@
+[project]
+name = "crypto-pit"
+version = "1.0.0"
+description = "Lokalna ewidencja kryptowalut i rozliczenie PIT-38"
+requires-python = ">=3.12"
+dependencies = ["requests==2.34.2"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+src = ["crypto_pit", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "BLE", "C4", "PIE", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.basedpyright]
+include = ["crypto_pit", "crypto-pit.py"]
+exclude = [
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.git",
+    "**/.pytest_cache",
+    "**/.mypy_cache",
+    "**/.*",
+    "**/.venv",
+]
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.12"
+typeCheckingMode = "standard"
+reportMissingTypeStubs = false
+reportOverlappingOverload = "none"
+reportIncompatibleVariableOverride = "none"

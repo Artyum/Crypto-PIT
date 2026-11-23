@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import sqlite3
-import threading
 import tkinter as tk
 from collections.abc import Callable
+from decimal import Decimal
 from tkinter import ttk
 from typing import TYPE_CHECKING
 
 from crypto_pit.domain.models import Holding
-from crypto_pit.gui.formatters import fmt_money, parse_float
+from crypto_pit.gui.formatters import fmt_money, fmt_qty, parse_decimal
 from crypto_pit.gui.theme import COLORS, apply_theme
 from crypto_pit.gui.widgets import (
     autosize_columns,
@@ -17,19 +17,12 @@ from crypto_pit.gui.widgets import (
     setup_columns,
 )
 from crypto_pit.gui.window_pos import askyesno, center_window, showerror, showinfo
-from crypto_pit.services.crypto_rates import CoinInfo, CryptoRateFetchError
+from crypto_pit.services.crypto_rates import CoinInfo
 
 if TYPE_CHECKING:
     from crypto_pit.gui.app import CryptoPitApp
 
 GAP = 8
-
-
-def _fmt_amount(v: float) -> str:
-    if abs(v) < 1e-12:
-        return "0"
-    s = f"{v:.10f}".rstrip("0").rstrip(".")
-    return s if s else "0"
 
 
 class HoldingsTab:
@@ -41,6 +34,7 @@ class HoldingsTab:
 
         self._rates_loaded = False
         self._fetch_busy = False
+        self._fetch_token: int | None = None
 
         toolbar = ttk.Frame(self.frame)
         toolbar.grid(row=0, column=0, sticky="ew", pady=(0, GAP))
@@ -118,15 +112,19 @@ class HoldingsTab:
             rates.remember_symbol(holding.symbol, holding.coin_id)
         ids = list(dict.fromkeys(h.coin_id for h in holdings))
 
-        def worker() -> None:
-            try:
-                rates.fetch_prices(ids, force_refresh=force)
-                err = ""
-            except CryptoRateFetchError as exc:
-                err = str(exc)
-            self.frame.after(0, lambda: self._on_fetch_done(err))
+        def work() -> str:
+            rates.fetch_prices(ids, force_refresh=force)
+            return ""
 
-        threading.Thread(target=worker, daemon=True).start()
+        def ok(_result: str) -> None:
+            self._fetch_token = None
+            self._on_fetch_done("")
+
+        def err(exc: BaseException) -> None:
+            self._fetch_token = None
+            self._on_fetch_done(str(exc))
+
+        self._fetch_token = self.app.tasks.submit(work, ok, err)
 
     def _on_fetch_done(self, error: str) -> None:
         self._fetch_busy = False
@@ -136,8 +134,8 @@ class HoldingsTab:
 
     def _render(self, holdings: list[Holding]) -> None:
         self.tree.delete(*self.tree.get_children())
-        total_usd = 0.0
-        total_pln = 0.0
+        total_usd = Decimal(0)
+        total_pln = Decimal(0)
 
         for i, h in enumerate(holdings):
             price = self.app.crypto_rates.get_cached_price(h.coin_id)
@@ -157,8 +155,8 @@ class HoldingsTab:
                 if price.pln is not None:
                     value_pln_s = fmt_money(h.amount * price.pln)
             else:
-                value_usd = h.amount * (price.usd or 0)
-                value_pln = h.amount * (price.pln or 0)
+                value_usd = h.amount * (price.usd or Decimal(0))
+                value_pln = h.amount * (price.pln or Decimal(0))
                 total_usd += value_usd
                 total_pln += value_pln
                 value_usd_s = fmt_money(value_usd)
@@ -170,7 +168,7 @@ class HoldingsTab:
                 (
                     h.symbol.upper(),
                     h.location,
-                    _fmt_amount(h.amount),
+                    fmt_qty(h.amount, 10),
                     value_usd_s,
                     value_pln_s,
                     status,
@@ -215,9 +213,14 @@ class HoldingsTab:
             if holding
             else f"#{holding_id}"
         )
-        if askyesno("Usuń", f"Usunąć {label} z portfela?", parent=self.app):
+        if not askyesno("Usuń", f"Usunąć {label} z portfela?", parent=self.app):
+            return
+        try:
             self.app.db.delete_holding(holding_id)
-            self.refresh()
+        except sqlite3.Error as exc:
+            showerror("Usuń", str(exc), parent=self.app)
+            return
+        self.refresh()
 
     def _after_save(self) -> None:
         if self.app.db.list_holdings():
@@ -239,6 +242,7 @@ class HoldingDialog:
         self._selected: CoinInfo | None = None
         self._results: list[CoinInfo] = []
         self._search_busy = False
+        self._search_token: int | None = None
 
         self.dlg = tk.Toplevel(app)
         self.dlg.title("Edycja pozycji" if holding else "Nowa pozycja")
@@ -247,6 +251,7 @@ class HoldingDialog:
         self.dlg.transient(app)
         self.dlg.grab_set()
         self.dlg.resizable(False, False)
+        self.dlg.bind("<Destroy>", self._cancel_search, add="+")
 
         body = ttk.Frame(self.dlg, padding=12)
         body.grid(row=0, column=0, sticky="nsew")
@@ -299,7 +304,7 @@ class HoldingDialog:
 
         ttk.Label(fields, text="Ilość").grid(row=1, column=0, sticky="w", pady=(8, 0))
         self.amount_var = tk.StringVar(
-            value=_fmt_amount(holding.amount) if holding else ""
+            value=fmt_qty(holding.amount, 10) if holding else ""
         )
         ttk.Entry(fields, textvariable=self.amount_var, width=24).grid(
             row=1, column=1, sticky="w", padx=(8, 0), pady=(8, 0)
@@ -329,15 +334,24 @@ class HoldingDialog:
         self._search_busy = True
         self.search_status.set("Szukam…")
 
-        def worker() -> None:
-            try:
-                results = self.app.crypto_rates.search_coins(query)
-                self.dlg.after(0, lambda: self._on_search_ok(results))
-            except CryptoRateFetchError as exc:
-                msg = str(exc)
-                self.dlg.after(0, lambda m=msg: self._on_search_err(m))
+        def work() -> list[CoinInfo]:
+            return self.app.crypto_rates.search_coins(query)
 
-        threading.Thread(target=worker, daemon=True).start()
+        def ok(results: list[CoinInfo]) -> None:
+            self._search_token = None
+            self._on_search_ok(results)
+
+        def err(exc: BaseException) -> None:
+            self._search_token = None
+            self._on_search_err(str(exc))
+
+        self._search_token = self.app.tasks.submit(work, ok, err)
+
+    def _cancel_search(self, event: tk.Event) -> None:
+        if event.widget is not self.dlg or self._search_token is None:
+            return
+        self.app.tasks.cancel(self._search_token)
+        self._search_token = None
 
     def _on_search_ok(self, results: list[CoinInfo]) -> None:
         self._search_busy = False
@@ -375,7 +389,7 @@ class HoldingDialog:
             showerror("Zapisz", "Podaj lokalizację.", parent=self.dlg)
             return
         try:
-            amount = parse_float(self.amount_var.get())
+            amount = parse_decimal(self.amount_var.get())
         except ValueError:
             showerror("Zapisz", "Niepoprawna ilość.", parent=self.dlg)
             return

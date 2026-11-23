@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import tkinter as tk
-from collections.abc import Callable
 from tkinter import messagebox
 from typing import Any, cast
 
 
 def app_root(widget: tk.Misc) -> tk.Tk:
-
     return cast(tk.Tk, widget.nametowidget("."))
 
 
@@ -15,7 +13,6 @@ def center_window(
     window: tk.Tk | tk.Toplevel,
     relative_to: tk.Misc | None = None,
 ) -> None:
-
     window.update_idletasks()
     anchor = relative_to if relative_to is not None else app_root(window)
     try:
@@ -36,53 +33,38 @@ def center_window(
     window.geometry(f"+{max(0, x)}+{max(0, y)}")
 
 
-def _run_message(
-    fn: Callable[..., Any],
-    title: str,
-    message: str,
-    parent: tk.Misc | None = None,
-    **kwargs: Any,
-) -> Any:
-
-    cleanup: tk.Toplevel | None = None
-    msg_parent: tk.Misc | None = parent
-    if parent is not None:
-        try:
-            root = app_root(parent)
-            if root.winfo_ismapped():
-                cleanup = tk.Toplevel(root)
-                cleanup.withdraw()
-                cleanup.overrideredirect(True)
-                cleanup.geometry("1x1+0+0")
-                try:
-                    cleanup.attributes("-alpha", 0.0)
-                except tk.TclError:
-                    pass
-                center_window(cleanup, root)
-                cleanup.deiconify()
-                cleanup.update_idletasks()
-                msg_parent = cleanup
-        except tk.TclError:
-            pass
+def _message_parent(parent: tk.Misc | None) -> tk.Misc | None:
+    if parent is None:
+        return None
     try:
-        return fn(title, message, parent=msg_parent, **kwargs)
-    finally:
-        if cleanup is not None:
-            try:
-                cleanup.destroy()
-            except tk.TclError:
-                pass
+        if parent.winfo_exists() and parent.winfo_ismapped():
+            return parent
+        root = app_root(parent)
+        if root.winfo_exists() and root.winfo_ismapped():
+            return root
+    except tk.TclError:
+        return None
+    return None
 
 
 def showinfo(title: str, message: str, parent: tk.Misc | None = None, **kwargs: Any):
-    return _run_message(messagebox.showinfo, title, message, parent, **kwargs)
+    target = _message_parent(parent)
+    if target is None:
+        return messagebox.showinfo(title, message, **kwargs)
+    return messagebox.showinfo(title, message, parent=target, **kwargs)
 
 
 def showerror(title: str, message: str, parent: tk.Misc | None = None, **kwargs: Any):
-    return _run_message(messagebox.showerror, title, message, parent, **kwargs)
+    target = _message_parent(parent)
+    if target is None:
+        return messagebox.showerror(title, message, **kwargs)
+    return messagebox.showerror(title, message, parent=target, **kwargs)
 
 
 def askyesno(
     title: str, message: str, parent: tk.Misc | None = None, **kwargs: Any
 ) -> bool:
-    return bool(_run_message(messagebox.askyesno, title, message, parent, **kwargs))
+    target = _message_parent(parent)
+    if target is None:
+        return bool(messagebox.askyesno(title, message, **kwargs))
+    return bool(messagebox.askyesno(title, message, parent=target, **kwargs))

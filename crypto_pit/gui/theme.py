@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tkinter as tk
+from contextlib import suppress
 from tkinter import ttk
 
 COLORS = {
@@ -30,16 +31,12 @@ ROW_HEIGHT = 30
 
 def apply_theme(root: tk.Tk | tk.Toplevel) -> ttk.Style:
     root.configure(bg=COLORS["bg"])
-    try:
+    with suppress(tk.TclError):
         root.option_add("*Font", FONT_UI)
-    except tk.TclError:
-        pass
 
     style = ttk.Style(root)
-    try:
+    with suppress(tk.TclError):
         style.theme_use("clam")
-    except tk.TclError:
-        pass
 
     c = COLORS
     style.configure(".", font=FONT_UI, foreground=c["ink"], focuscolor="")

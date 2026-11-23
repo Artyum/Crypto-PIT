@@ -11,7 +11,7 @@ $env:NO_COLOR = "1"
 $env:FORCE_COLOR = "0"
 $env:TERM = "dumb"
 $env:CI = "1"
-$Total = 4
+$Total = 3
 
 Write-Host ""
 Write-Host "============ LINT CHECK ============"
@@ -23,7 +23,7 @@ if (-not (Test-Path $ReportDir)) {
 
 $venvPython = Join-Path $Root ".venv\Scripts\python.exe"
 $venvScripts = Join-Path $Root ".venv\Scripts"
-$requirementsDev = Join-Path $Root "requirements.txt"
+$requirementsDev = Join-Path $Root "requirements-dev.txt"
 
 if (-not (Test-Path $venvPython)) {
     Write-Host "[BLAD] Brak .venv - uruchom najpierw start_app.ps1 albo: py -3 -m venv .venv"
@@ -33,7 +33,7 @@ if (-not (Test-Path $venvPython)) {
 # Narzedzia lint w .venv (ruff, basedpyright)
 & $venvPython -m pip install --quiet -r $requirementsDev
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "[BLAD] Nie udalo sie zainstalowac requirements.txt"
+    Write-Host "[BLAD] Nie udalo sie zainstalowac requirements-dev.txt"
     exit 1
 }
 
@@ -113,9 +113,8 @@ function Invoke-LintStep {
 
 $results = @(
     (Invoke-LintStep 1 "ruff format" $ruff @("format", ".", "--color=never"))
-    (Invoke-LintStep 2 "ruff check --fix-only --show-fixes" $ruff @("check", ".", "--fix-only", "--show-fixes", "--color=never"))
-    (Invoke-LintStep 3 "ruff check --output-format=concise" $ruff @("check", ".", "--output-format=concise", "--color=never"))
-    (Invoke-LintStep 4 "basedpyright" $basedpyright @())
+    (Invoke-LintStep 2 "ruff check --fix" $ruff @("check", ".", "--fix", "--output-format=concise", "--color=never"))
+    (Invoke-LintStep 3 "basedpyright" $basedpyright @())
 )
 
 Write-Host ""

@@ -13,7 +13,7 @@
 
 - Połączenie z internetem tylko wtedy, gdy pobierasz kurs NBP albo wycenę z CoinGecko.
 
-Kod programu importuje `requests`. Plik `requirements.txt`, instalowany przez skrypt startowy, zawiera też `urllib3`, `certifi` oraz narzędzia `pytest`, `pytest-cov`, `ruff`, `basedpyright` i `pip-audit`.
+Kod programu importuje `requests`. `requirements.txt` zawiera zależność uruchomieniową, a dokładne wersje przejściowe są w `requirements.lock`. Narzędzia `pytest`, `pytest-cov`, `ruff`, `basedpyright` i `pip-audit` są w `requirements-dev.txt`.
 
 ## Windows — najprościej
 
@@ -41,7 +41,7 @@ Jeśli Python nie jest w PATH, pojawi się okno z komunikatem błędu. Wtedy zai
 
 ```powershell
 py -3 -m venv .venv
-.\.venv\Scripts\pip install -r requirements.txt
+.\.venv\Scripts\pip install -r requirements-dev.txt
 .\.venv\Scripts\python -m crypto_pit
 ```
 
@@ -52,7 +52,7 @@ Ten sam efekt daje `python crypto-pit.py` po aktywacji środowiska (albo z pełn
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 python -m crypto_pit
 ```
 
@@ -77,7 +77,7 @@ Przełączniki `--cli` i `--db` można podać razem:
 
 ## Gdzie lądują dane
 
-Domyślna baza to `data/crypto_pit.db`. Przy starcie program tworzy katalog i plik bazy, jeśli ich nie ma. Katalog `data/` i pliki `*.db` są w `.gitignore`.
+Jeśli w projekcie istnieje `data/crypto_pit.db`, program nadal używa tego pliku. W przeciwnym razie tworzy bazę w katalogu danych użytkownika: `%LOCALAPPDATA%\Crypto-PIT\crypto_pit.db` w Windows. Katalog `data/` i pliki `*.db` są w `.gitignore`. Import kopii zapasowej wymaga poprawnych wartości i odrzuca uszkodzone wiersze przed zmianą bazy.
 
 Nowa baza nie zawiera transakcji ani pozycji portfela. Wpisy dodaje się w oknie programu albo wczytuje z [backupu ZIP](eksport-i-backup.md).
 

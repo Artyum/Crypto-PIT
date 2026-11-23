@@ -63,9 +63,17 @@ if (-not (Test-Path $requirements)) {
     Show-Error "Brak pliku requirements.txt w $PSScriptRoot."
 }
 
-& $venvPython -m pip install --quiet -r $requirements
+& $venvPython -c "import requests"
 if ($LASTEXITCODE -ne 0) {
-    Show-Error "pip install -r requirements.txt zakonczylo sie bledem."
+    & $venvPython -m pip install --quiet -r $requirements
+    if ($LASTEXITCODE -ne 0) {
+        Show-Error "pip install -r requirements.txt zakonczylo sie bledem."
+    }
+}
+
+& $venvPython -c "import crypto_pit"
+if ($LASTEXITCODE -ne 0) {
+    Show-Error "Nie udalo sie uruchomic Crypto-PIT. Sprawdz instalacje Pythona i pliki programu."
 }
 
 # pythonw = GUI bez okna konsoli

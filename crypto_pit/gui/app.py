@@ -83,8 +83,6 @@ class CryptoPitApp(tk.Tk):
         menu_file.add_separator()
         menu_file.add_command(label="Import backupu…", command=self.import_backup)
         menu_file.add_separator()
-        menu_file.add_command(label="Odśwież", command=self.refresh_all)
-        menu_file.add_separator()
         menu_file.add_command(label="Zakończ", command=self.destroy)
         menubar.add_cascade(label="Plik", menu=menu_file)
 

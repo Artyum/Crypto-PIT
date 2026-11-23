@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 import tkinter as tk
 from collections.abc import Callable
+from dataclasses import dataclass
 from decimal import Decimal
 from tkinter import ttk
 from typing import TYPE_CHECKING
@@ -23,6 +24,48 @@ if TYPE_CHECKING:
     from crypto_pit.gui.app import CryptoPitApp
 
 GAP = 8
+_OK = "OK"
+_LOADING = "Pobieranie…"
+_WAITING = "Oczekuje na kurs"
+_MISSING = "Brak kursu"
+_RATE_ERROR = "Błąd kursu"
+
+
+@dataclass(frozen=True)
+class _QuotedHolding:
+    holding: Holding
+    status: str
+    value_usd: Decimal | None
+    value_pln: Decimal | None
+
+    @property
+    def complete(self) -> bool:
+        return (
+            self.status == _OK
+            and self.value_usd is not None
+            and self.value_pln is not None
+        )
+
+
+def _sum_amount(lines: list[_QuotedHolding]) -> Decimal:
+    return sum((line.holding.amount for line in lines), Decimal(0))
+
+
+def _sum_usd(lines: list[_QuotedHolding]) -> Decimal:
+    return sum((line.value_usd or Decimal(0) for line in lines), Decimal(0))
+
+
+def _sum_pln(lines: list[_QuotedHolding]) -> Decimal:
+    return sum((line.value_pln or Decimal(0) for line in lines), Decimal(0))
+
+
+def _group_status(lines: list[_QuotedHolding]) -> str:
+    if any(line.status == _LOADING for line in lines):
+        return _LOADING
+    for line in lines:
+        if line.status != _OK:
+            return line.status
+    return _OK
 
 
 class HoldingsTab:
@@ -30,7 +73,8 @@ class HoldingsTab:
         self.app = app
         self.frame = parent
         self.frame.columnconfigure(0, weight=1)
-        self.frame.rowconfigure(1, weight=1)
+        self.frame.rowconfigure(1, weight=3)
+        self.frame.rowconfigure(3, weight=2)
 
         self._rates_loaded = False
         self._fetch_busy = False
@@ -48,7 +92,7 @@ class HoldingsTab:
         ttk.Button(toolbar, text="Usuń", command=self.delete).pack(
             side=tk.LEFT, padx=(0, GAP)
         )
-        ttk.Button(toolbar, text="Odśwież teraz", command=self.refresh_rates).pack(
+        ttk.Button(toolbar, text="Odśwież kursy", command=self.refresh_rates).pack(
             side=tk.LEFT, padx=(16, 0)
         )
 
@@ -79,8 +123,34 @@ class HoldingsTab:
         )
         self.tree.bind("<Double-1>", lambda _e: self.edit())
 
+        ttk.Label(self.frame, text="Sumy posiadanych walorów").grid(
+            row=2, column=0, sticky="w", pady=(GAP, 4)
+        )
+
+        sums_wrap, self.sums = create_tree(self.frame)
+        sums_wrap.grid(row=3, column=0, sticky="nsew")
+        setup_columns(
+            self.sums,
+            ("symbol", "locations", "amount", "value_usd", "value_pln", "status"),
+            {
+                "symbol": "Walor",
+                "locations": "Lokalizacje",
+                "amount": "Ilość",
+                "value_usd": "Wartość USD",
+                "value_pln": "Wartość PLN",
+                "status": "Status",
+            },
+            anchors={
+                "locations": tk.E,
+                "amount": tk.E,
+                "value_usd": tk.E,
+                "value_pln": tk.E,
+                "status": tk.E,
+            },
+        )
+
         self.sum_label = ttk.Label(self.frame, text="", style="Muted.TLabel")
-        self.sum_label.grid(row=2, column=0, sticky="ew", pady=(GAP, 0))
+        self.sum_label.grid(row=4, column=0, sticky="ew", pady=(GAP, 0))
 
     def on_show(self) -> None:
         self.refresh(fetch_rates=not self._rates_loaded)
@@ -132,59 +202,83 @@ class HoldingsTab:
         self.status_var.set(error or "Kursy zaktualizowane")
         self._render(self.app.db.list_holdings())
 
+    def _quote(self, holding: Holding) -> _QuotedHolding:
+        price = self.app.crypto_rates.get_cached_price(holding.coin_id)
+        if price is None:
+            status = (
+                _LOADING
+                if self._fetch_busy
+                else (_WAITING if not self._rates_loaded else _MISSING)
+            )
+            return _QuotedHolding(holding, status, None, None)
+        value_usd = holding.amount * price.usd if price.usd is not None else None
+        value_pln = holding.amount * price.pln if price.pln is not None else None
+        status = _OK if price.ok else (price.error or _RATE_ERROR)
+        return _QuotedHolding(holding, status, value_usd, value_pln)
+
     def _render(self, holdings: list[Holding]) -> None:
+        lines = [self._quote(holding) for holding in holdings]
+        self._fill_positions(lines)
+        self._fill_sums(lines)
+        self._fill_totals(lines)
+        autosize_columns(self.tree)
+        autosize_columns(self.sums)
+
+    def _fill_positions(self, lines: list[_QuotedHolding]) -> None:
         self.tree.delete(*self.tree.get_children())
-        total_usd = Decimal(0)
-        total_pln = Decimal(0)
-
-        for i, h in enumerate(holdings):
-            price = self.app.crypto_rates.get_cached_price(h.coin_id)
-            value_usd_s = value_pln_s = "—"
-            if price is None:
-                status = (
-                    "Pobieranie…"
-                    if self._fetch_busy
-                    else (
-                        "Oczekuje na kurs" if not self._rates_loaded else "Brak kursu"
-                    )
-                )
-            elif not price.ok:
-                status = price.error or "Błąd kursu"
-                if price.usd is not None:
-                    value_usd_s = fmt_money(h.amount * price.usd)
-                if price.pln is not None:
-                    value_pln_s = fmt_money(h.amount * price.pln)
-            else:
-                value_usd = h.amount * (price.usd or Decimal(0))
-                value_pln = h.amount * (price.pln or Decimal(0))
-                total_usd += value_usd
-                total_pln += value_pln
-                value_usd_s = fmt_money(value_usd)
-                value_pln_s = fmt_money(value_pln)
-                status = "OK"
-
+        for index, line in enumerate(lines):
+            holding = line.holding
             insert_row(
                 self.tree,
                 (
-                    h.symbol.upper(),
-                    h.location,
-                    fmt_qty(h.amount, 10),
-                    value_usd_s,
-                    value_pln_s,
-                    status,
+                    holding.symbol.upper(),
+                    holding.location,
+                    fmt_qty(holding.amount, 10),
+                    fmt_money(line.value_usd),
+                    fmt_money(line.value_pln),
+                    line.status,
                 ),
-                iid=str(h.id),
-                index=i,
+                iid=str(holding.id),
+                index=index,
             )
 
+    def _fill_sums(self, lines: list[_QuotedHolding]) -> None:
+        self.sums.delete(*self.sums.get_children())
+        grouped: dict[str, list[_QuotedHolding]] = {}
+        for line in lines:
+            grouped.setdefault(line.holding.coin_id, []).append(line)
+        ordered = sorted(
+            grouped,
+            key=lambda coin_id: grouped[coin_id][0].holding.symbol.upper(),
+        )
+        for index, coin_id in enumerate(ordered):
+            rows = grouped[coin_id]
+            complete = all(row.complete for row in rows)
+            insert_row(
+                self.sums,
+                (
+                    rows[0].holding.symbol.upper(),
+                    len(rows),
+                    fmt_qty(_sum_amount(rows), 10),
+                    fmt_money(_sum_usd(rows) if complete else None),
+                    fmt_money(_sum_pln(rows) if complete else None),
+                    _group_status(rows),
+                ),
+                iid=coin_id,
+                index=index,
+            )
+
+    def _fill_totals(self, lines: list[_QuotedHolding]) -> None:
+        valued = [line for line in lines if line.complete]
+        assets = {line.holding.coin_id for line in lines}
         self.sum_label.config(
             text=(
-                f"Pozycje: {len(holdings)}    |    "
-                f"Suma: {fmt_money(total_usd)} USD    |    "
-                f"{fmt_money(total_pln)} PLN"
+                f"Pozycje: {len(lines)}    |    "
+                f"Walory: {len(assets)}    |    "
+                f"Suma: {fmt_money(_sum_usd(valued))} USD    |    "
+                f"{fmt_money(_sum_pln(valued))} PLN"
             )
         )
-        autosize_columns(self.tree)
 
     def _selected_id(self) -> int | None:
         sel = self.tree.selection()

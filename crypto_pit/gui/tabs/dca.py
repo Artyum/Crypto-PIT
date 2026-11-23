@@ -137,7 +137,12 @@ class DcaTab:
         ttk.Entry(toolbar, textvariable=self.to_var, width=12, takefocus=False).pack(
             side=tk.LEFT, padx=(6, 6)
         )
-        ttk.Button(toolbar, text="Wybierz…", command=self._pick_to).pack(side=tk.LEFT)
+        ttk.Button(toolbar, text="Wybierz…", command=self._pick_to).pack(
+            side=tk.LEFT, padx=(0, 16)
+        )
+        ttk.Button(toolbar, text="Odśwież kursy", command=self.refresh_rates).pack(
+            side=tk.LEFT
+        )
 
     def on_show(self) -> None:
         self.refresh()
@@ -151,6 +156,13 @@ class DcaTab:
         self._refresh_years(transactions)
         self._apply_default_dates(transactions)
         self._render(transactions)
+
+    def refresh_rates(self) -> None:
+        self.refresh()
+        if not self._result.rows:
+            self._rates_loaded = True
+            return
+        self._fetch_rates(force=True)
 
     def _fetch_rates(self, *, force: bool) -> None:
         if self._fetch_busy:

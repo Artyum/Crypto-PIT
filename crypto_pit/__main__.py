@@ -10,7 +10,10 @@ def main() -> None:
         "--db",
         type=Path,
         default=None,
-        help="Ścieżka do pliku SQLite (domyślnie data/crypto_pit.db)",
+        help=(
+            "Ścieżka do pliku SQLite. Domyślnie istniejący plik "
+            "data/crypto_pit.db, a gdy go nie ma — katalog danych użytkownika"
+        ),
     )
     parser.add_argument(
         "--cli",

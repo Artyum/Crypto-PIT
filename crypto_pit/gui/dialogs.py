@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 import tkinter as tk
 from collections.abc import Callable
-from datetime import timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from tkinter import ttk
 from typing import TYPE_CHECKING
@@ -23,7 +23,7 @@ from crypto_pit.gui.datetime_picker import ask_datetime
 from crypto_pit.gui.formatters import fmt_datetime, parse_datetime
 from crypto_pit.gui.theme import COLORS, apply_theme
 from crypto_pit.gui.window_pos import center_window, showerror, showinfo
-from crypto_pit.services.nbp_rates import NbpRate, fetch_pln_rate
+from crypto_pit.services.nbp_rates import MAX_LOOKBACK_DAYS, NbpRate, fetch_pln_rate
 
 if TYPE_CHECKING:
     from crypto_pit.gui.app import CryptoPitApp
@@ -55,6 +55,11 @@ _DEFAULT_VALUE_LABELS = {
 
 def _fmt_num(value: Decimal, digits: int = 8) -> str:
     return decimal_to_text(quantize(value, digits))
+
+
+def _nbp_search_from(moment: datetime) -> date:
+    before = (moment - timedelta(days=1)).date()
+    return before - timedelta(days=MAX_LOOKBACK_DAYS - 1)
 
 
 def _safe_decimal(text: str) -> Decimal | None:
@@ -149,6 +154,9 @@ class TransactionDialog:
         self._nbp_date = tx.nbp_date if tx else None
         self._nbp_table = tx.nbp_table if tx else ""
         self._nbp_name = ""
+        self._nbp_search_from = (
+            _nbp_search_from(tx.date) if tx and tx.nbp_date else None
+        )
         self._user_fields: set[str] = set()
         self._lockable_entries: list[ttk.Entry] = []
         self._lockable_buttons: list[ttk.Button] = []
@@ -560,6 +568,7 @@ class TransactionDialog:
         self._nbp_date = None
         self._nbp_table = ""
         self._nbp_name = ""
+        self._nbp_search_from = None
 
     def _sync_rate_widgets(self) -> None:
         if self._currency_code() == "PLN":
@@ -669,6 +678,7 @@ class TransactionDialog:
             )
             return
         before = (dt - timedelta(days=1)).date()
+        search_from = before - timedelta(days=MAX_LOOKBACK_DAYS - 1)
         self._rate_busy = True
         self.rate_btn.configure(state="disabled", text="…")
         self.rate_info.config(text=f"Szukam kursu {code}/PLN…")
@@ -679,6 +689,7 @@ class TransactionDialog:
 
         def ok(result: NbpRate) -> None:
             self._rate_token = None
+            self._nbp_search_from = search_from
             self._on_rate_ok(result)
 
         def err(exc: BaseException) -> None:
@@ -708,6 +719,9 @@ class TransactionDialog:
         code = self._currency_code()
         name = f"{self._nbp_name} ({code})" if self._nbp_name else code
         table = self._nbp_table or "—"
+        searched_from = (
+            self._nbp_search_from.isoformat() if self._nbp_search_from else "—"
+        )
         showinfo(
             "Kurs NBP",
             (
@@ -715,7 +729,8 @@ class TransactionDialog:
                 f"Waluta: {name}\n"
                 f"Kurs średni: 1 {code} = {self.rate_var.get()} PLN\n"
                 f"Data tabeli: {self._nbp_date.isoformat()}\n"
-                f"Nr tabeli: {table}"
+                f"Nr tabeli: {table}\n"
+                f"Szukano od: {searched_from}"
             ),
             parent=self.dlg,
         )

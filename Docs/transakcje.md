@@ -32,7 +32,7 @@ Gdy w polu wartości albo w polu wejściowym profilu jest tekst, przy etykiecie 
 
 ### Kurs NBP
 
-Przycisk **NBP** pobiera kurs średni z tabeli A. Szuka tabeli z dnia poprzedzającego datę transakcji. Gdy API zwróci 404, cofa datę o jeden dzień i próbuje ponownie, najwyżej 10 razy.
+Przycisk **NBP** pobiera kurs średni z tabeli A. Dzień końcowy zakresu to dzień poprzedzający datę transakcji. Program pyta API o tabele z 10 dni kończących się tym dniem i bierze najnowszą. Gdy w tym zakresie nie ma tabeli, pokazuje błąd. Przejściowy błąd bramki (odpowiedź 404 ze stroną HTML) jest ponawiany.
 
 Po udanym pobraniu obok kursu widać skrót „NBP: 1 … = … PLN (data tabeli)” oraz przycisk **i**. Przycisk **i** pokazuje nazwę waluty, kurs średni, datę tabeli, numer tabeli i datę, od której zaczęło się szukanie.
 

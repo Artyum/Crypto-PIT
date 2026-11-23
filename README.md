@@ -11,7 +11,7 @@ To narzędzie pomocnicze, **nie poradnictwo podatkowe**. Numeracja pól PIT-38, 
 ## Co robi program
 
 - **Transakcje** — ręczne dodawanie kupna i sprzedaży z profilami giełd (Binance, Coinbase, Kanga, Kraken, OKX, Zonda). Dla wybranej giełdy program dolicza ilość, cenę, prowizję w walorze i wartości w PLN.
-- **Kurs NBP** — dla waluty innej niż PLN pobiera kurs średni z tabeli A z dnia poprzedzającego transakcję. Gdy API zwróci 404, cofa datę o jeden dzień, najwyżej 10 razy.
+- **Kurs NBP** — dla waluty innej niż PLN pobiera kurs średni z tabeli A. Pyta o zakres 10 dni kończący się w dniu poprzedzającym transakcję i bierze najnowszą tabelę z tego zakresu.
 - **Portfel** — stany walorów według lokalizacji, z opcjonalną wyceną USD/PLN z CoinGecko.
 - **Rozliczenie lat** — przychód ze sprzedaży, koszty roku, koszty przeniesione z lat ubiegłych, dochód albo koszty do przeniesienia, orientacyjny podatek 19%.
 - **Pola PIT-38** — mapowanie na część E (numery pól zależą od roku: do 2024 to 34–38, od 2025 to 36–40).

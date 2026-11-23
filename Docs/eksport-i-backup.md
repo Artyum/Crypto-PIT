@@ -14,7 +14,7 @@ Polecenia są w menu **Plik**.
 
 W pliku są dwie sekcje:
 
-1. **TRANSAKCJE** — kolumny: ID, Data, Typ, Walor, Ilość, Waluta, Kurs, Data kursu NBP, Cena, Wartość PLN, Prowizja PLN, Prowizja (walor), Przychód PIT, Koszt PIT, Uwagi.
+1. **TRANSAKCJE** — kolumny: ID, Data, Typ, Walor, Ilość, Finalna ilość, Waluta, Kurs, Data kursu NBP, Cena, Wartość PLN, Prowizja PLN, Prowizja (walor), Przychód PIT, Koszt PIT, Uwagi. **Ilość** to ilość waloru (`coin_amount`), tak jak kolumna „Ilość” na liście transakcji. **Finalna ilość** to `final_coin`.
 2. **ROZLICZENIE LAT (PIT-38)** — kolumny jak na zakładce [Rozliczenie lat](rozliczenie-lat.md): Rok, Przychód, Koszty roku, Koszty lat ub., Razem, Dochód, Do przeniesienia, Podatek 19%, Liczba transakcji.
 
 Przywracanie danych do bazy idzie przez backup ZIP opisany niżej.

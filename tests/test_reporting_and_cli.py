@@ -62,13 +62,24 @@ def test_query_dca_remaining_messages() -> None:
 
 def test_export_report(tmp_path: Path) -> None:
     path = tmp_path / "raport.csv"
-    sell = _tx(type=TxType.SELL, value_pln=200, fee_pln=2, id=3)
+    sell = _tx(
+        type=TxType.SELL,
+        value_pln=200,
+        fee_pln=2,
+        id=3,
+        amount=Decimal("1.5"),
+        coin_amount=Decimal("1.25"),
+        final_coin=Decimal("1.2"),
+    )
     years = settle_years([sell])
     export_report(path, [sell], years)
     text = path.read_text(encoding="utf-8-sig")
     assert "TRANSAKCJE" in text
     assert "PIT-38" in text
     assert "linia | druga" in text
+    assert "Ilość;Finalna ilość" in text
+    assert "1,25;1,2;" in text
+    assert "1,5;" not in text
 
 
 def test_cli_and_main(

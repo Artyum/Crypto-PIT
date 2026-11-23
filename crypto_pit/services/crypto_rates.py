@@ -56,6 +56,10 @@ class CryptoRatesService:
             with self._lock:
                 self._symbol_ids[key] = cid
 
+    def coin_id_for_symbol(self, symbol: str) -> str | None:
+        with self._lock:
+            return self._symbol_ids.get(symbol.strip().upper())
+
     def get_cached_price_for_symbol(self, symbol: str) -> CryptoPrice | None:
         with self._lock:
             cid = self._symbol_ids.get(symbol.strip().upper())

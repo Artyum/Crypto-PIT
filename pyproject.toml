@@ -1,6 +1,6 @@
 [project]
 name = "crypto-pit"
-version = "1.0.0"
+version = "1.1.0"
 description = "Lokalna ewidencja kryptowalut i rozliczenie PIT-38"
 requires-python = ">=3.12"
 dependencies = ["requests==2.34.2"]

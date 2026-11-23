@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import queue
+import time
 import tkinter as tk
 from tkinter import ttk
 from typing import TYPE_CHECKING
@@ -29,6 +31,10 @@ if TYPE_CHECKING:
 
 GAP = 8
 _ALL_YEARS = "Wszystkie"
+_RATE_LOADING = "Pobieranie…"
+_RATE_MISSING = "Brak kursu"
+_USD_COLUMN = 4
+_PLN_COLUMN = 5
 
 
 class DcaTab:
@@ -43,7 +49,9 @@ class DcaTab:
         self._applying = False
         self._rates_loaded = False
         self._fetch_busy = False
+        self._fetch_generation = 0
         self._fetch_token: int | None = None
+        self._rate_updates: queue.Queue[str] = queue.Queue()
         self._result = DcaResult((), {}, 0, "")
         self.from_var = tk.StringVar()
         self.to_var = tk.StringVar()
@@ -134,11 +142,8 @@ class DcaTab:
     def on_show(self) -> None:
         self.refresh()
         assets = [row.asset for row in self._result.rows]
-        missing = any(
-            self.app.crypto_rates.get_cached_price_for_symbol(asset) is None
-            for asset in assets
-        )
-        if not self._rates_loaded or missing:
+        pending = any(not self._price_ready(asset) for asset in assets)
+        if not self._rates_loaded or pending:
             self._fetch_rates(force=False)
 
     def refresh(self) -> None:
@@ -155,19 +160,95 @@ class DcaTab:
             self._rates_loaded = True
             return
         self._fetch_busy = True
+        self._fetch_generation += 1
+        generation = self._fetch_generation
+        self._drain_rate_updates()
+        for asset in assets:
+            self._apply_rate_labels(asset)
+        autosize_columns(self.summary)
+        if not self.status_var.get():
+            self.status_var.set("Pobieranie kursów…")
         rates = self.app.crypto_rates
         holdings = self.app.db.list_holdings()
+        self.frame.after(100, lambda: self._poll_rate_updates(generation))
+
+        def publish(asset: str) -> None:
+            self._rate_updates.put(asset)
+
+        def retry_limited(ids: list[str]) -> None:
+            failed = [
+                cid
+                for cid in ids
+                if (price := rates.get_cached_price(cid)) is not None
+                and not price.ok
+                and "429" in (price.error or "")
+            ]
+            if not failed:
+                return
+            time.sleep(1.5)
+            rates.fetch_prices(failed)
 
         def work() -> str:
             for holding in holdings:
                 rates.remember_symbol(holding.symbol, holding.coin_id)
-            mapping = rates.resolve_symbols(assets)
-            rates.fetch_prices(list(mapping.values()), force_refresh=force)
-            return ""
+            pending_ids: list[str] = []
+            seen_ids: set[str] = set()
+            unknown: list[str] = []
+            for asset in assets:
+                coin_id = rates.coin_id_for_symbol(asset)
+                if not coin_id:
+                    unknown.append(asset)
+                    continue
+                cached = rates.get_cached_price(coin_id)
+                if cached is not None and cached.ok and not force:
+                    publish(asset)
+                    continue
+                if coin_id not in seen_ids:
+                    seen_ids.add(coin_id)
+                    pending_ids.append(coin_id)
+            if pending_ids:
+                rates.fetch_prices(pending_ids, force_refresh=force)
+                retry_limited(pending_ids)
+                for asset in assets:
+                    if asset not in unknown:
+                        publish(asset)
+            resolved: list[str] = []
+            missing_ids: list[str] = []
+            seen_missing: set[str] = set()
+            for asset in unknown:
+                coin_id = rates.resolve_symbols([asset]).get(asset.strip().upper())
+                if not coin_id:
+                    continue
+                resolved.append(asset)
+                cached = rates.get_cached_price(coin_id)
+                if cached is not None and cached.ok and not force:
+                    publish(asset)
+                    continue
+                if coin_id not in seen_missing:
+                    seen_missing.add(coin_id)
+                    missing_ids.append(coin_id)
+            if missing_ids:
+                rates.fetch_prices(missing_ids, force_refresh=force)
+                retry_limited(missing_ids)
+                for asset in resolved:
+                    publish(asset)
+            messages: list[str] = []
+            seen_messages: set[str] = set()
+            for asset in assets:
+                price = rates.get_cached_price_for_symbol(asset)
+                if price is not None and price.ok:
+                    continue
+                message = price.error if price is not None and price.error else ""
+                if not message:
+                    message = f"{asset}: brak kursu"
+                if message not in seen_messages:
+                    seen_messages.add(message)
+                    messages.append(message)
+            return " · ".join(messages)
 
-        def ok(_result: str) -> None:
+        def ok(result: str) -> None:
             self._fetch_token = None
-            self._on_fetch_done("")
+            self._on_fetch_done(result)
 
         def err(exc: BaseException) -> None:
             self._fetch_token = None
@@ -178,10 +259,13 @@ class DcaTab:
     def _on_fetch_done(self, error: str) -> None:
         self._fetch_busy = False
         self._rates_loaded = True
-        transactions = self.app.db.list_transactions()
-        self._render(transactions)
+        for row in self._result.rows:
+            self._apply_rate_labels(row.asset)
+        autosize_columns(self.summary)
         if error:
             self.status_var.set(error)
+        elif self.status_var.get() == "Pobieranie kursów…":
+            self.status_var.set("")
 
     def _refresh_years(self, transactions: list[Transaction]) -> None:
         values = [_ALL_YEARS, *[str(year) for year in buy_years(transactions)]]
@@ -269,11 +353,7 @@ class DcaTab:
         self.summary.delete(*self.summary.get_children())
         self.detail.delete(*self.detail.get_children())
         for index, row in enumerate(query.result.rows):
-            price = self.app.crypto_rates.get_cached_price_for_symbol(row.asset)
-            usd_s = pln_s = "—"
-            if price is not None:
-                usd_s = fmt_rate(price.usd)
-                pln_s = fmt_rate(price.pln)
+            usd_s, pln_s = self._rate_labels(row.asset)
             insert_row(
                 self.summary,
                 (
@@ -296,6 +376,60 @@ class DcaTab:
         self.summary.selection_set(target)
         self.summary.focus(target)
         self._fill_detail(target)
+
+    def _price_ready(self, asset: str) -> bool:
+        price = self.app.crypto_rates.get_cached_price_for_symbol(asset)
+        return price is not None and price.ok
+
+    def _drain_rate_updates(self) -> None:
+        while True:
+            try:
+                self._rate_updates.get_nowait()
+            except queue.Empty:
+                return
+
+    def _poll_rate_updates(self, generation: int) -> None:
+        if generation != self._fetch_generation:
+            return
+        changed = False
+        while True:
+            try:
+                asset = self._rate_updates.get_nowait()
+            except queue.Empty:
+                break
+            self._apply_rate_labels(asset)
+            changed = True
+        if changed:
+            autosize_columns(self.summary)
+        if self._fetch_busy and generation == self._fetch_generation:
+            try:
+                self.frame.after(100, lambda: self._poll_rate_updates(generation))
+            except tk.TclError:
+                return
+
+    def _rate_labels(self, asset: str) -> tuple[str, str]:
+        price = self.app.crypto_rates.get_cached_price_for_symbol(asset)
+        if price is not None and price.usd is not None and price.pln is not None:
+            return fmt_rate(price.usd), fmt_rate(price.pln)
+        if self._fetch_busy or not self._rates_loaded:
+            return _RATE_LOADING, _RATE_LOADING
+        if price is None:
+            return _RATE_MISSING, _RATE_MISSING
+        return (
+            fmt_rate(price.usd) if price.usd is not None else _RATE_MISSING,
+            fmt_rate(price.pln) if price.pln is not None else _RATE_MISSING,
+        )
+
+    def _apply_rate_labels(self, asset: str) -> None:
+        if not self.summary.exists(asset):
+            return
+        usd_s, pln_s = self._rate_labels(asset)
+        values = list(self.summary.item(asset, "values"))
+        if len(values) <= _PLN_COLUMN:
+            return
+        values[_USD_COLUMN] = usd_s
+        values[_PLN_COLUMN] = pln_s
+        self.summary.item(asset, values=values)
 
     def _selected_asset(self) -> str | None:
         selected = self.summary.selection()
